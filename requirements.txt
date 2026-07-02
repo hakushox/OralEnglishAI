@@ -1,0 +1,6 @@
+edge_tts==7.2.8
+ollama==0.6.2
+prompt_toolkit==3.0.52
+Requests==2.34.2
+sounddevice==0.5.5
+soundfile==0.14.0
