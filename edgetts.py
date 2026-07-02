@@ -28,7 +28,7 @@ if getattr(sys, 'frozen', False):
     except Exception as e:
         print(f'更新失败，原因{e}\n直接使用当前版本')
 
-ensure_ollama_ready()
+MODEL_NAME = ensure_ollama_ready()
 
 def load_json():
     if RECORDS.exists():
@@ -127,7 +127,7 @@ def correct_text(text=None, context=None, with_context=False, chat_mode=False):
 
     if not with_context:
         response = ollama.chat(
-            model='qwen3.5:4b',
+            model=MODEL_NAME,
             messages=[
                 {'role':'system', 'content': system_prompt},
                 {'role': 'user', 'content': text}],
@@ -140,7 +140,7 @@ def correct_text(text=None, context=None, with_context=False, chat_mode=False):
             {'role': 'user', 'content': context}
              )
             response = ollama.chat(
-                model= 'qwen3.5:4b',
+                model= MODEL_NAME,
                 messages=[
                     *chat_history, #chat_history 是一个列表  应该用 *chat_history 展开
                 ],

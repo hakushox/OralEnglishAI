@@ -2,7 +2,7 @@ import subprocess
 import sys
 import webbrowser
 
-MODEL_NAME = 'qwen3.5:4b'
+MODEL_KEYWORD = 'qwen3.5:4b'
 if sys.platform == 'win32':
     DOWNLOAD_URL = 'https://ollama.com/download/windows'
 elif sys.platform == 'darwin':
@@ -23,7 +23,7 @@ def check_ollama_installed():
         return False
 
 
-def check_model_installed(model_name=MODEL_NAME):
+def check_model_installed(keyword=MODEL_KEYWORD):
     """检测目标模型是否已经下载到本机"""
     try:
         result = subprocess.run(
@@ -33,14 +33,21 @@ def check_model_installed(model_name=MODEL_NAME):
             check=True,
             timeout=10
         )
-        return model_name in result.stdout
+        lines = result.stdout.strip().split('\n')[1:]
+        for line in lines:
+            if not line.strip():
+                continue
+            model_name = line.split()[0]
+            if keyword in model_name:
+                return model_name
+        return None
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return False
 
 
-def pull_model(model_name=MODEL_NAME):
+def pull_model(model_name):
     """下载模型，实时打印 ollama 的下载进度"""
-    print(f'正在下载模型 {model_name}（约3.4GB，请保持网络畅通）...')
+    print(f'正在下载模型 {model_name}，请保持网络畅通...')
     try:
         # 不用 capture_output，让 ollama 自己的进度条直接打印到终端
         subprocess.run(['ollama', 'pull', model_name], check=True)
@@ -50,7 +57,7 @@ def pull_model(model_name=MODEL_NAME):
         return False
 
 
-def ensure_ollama_ready(model_name=MODEL_NAME, download_url=DOWNLOAD_URL):
+def ensure_ollama_ready(model_keyword=MODEL_KEYWORD, download_url=DOWNLOAD_URL):
     """
     程序启动时调用这个函数做前置检查。
     如果环境没准备好，会引导用户安装/下载，并在必要时退出程序。
@@ -64,18 +71,21 @@ def ensure_ollama_ready(model_name=MODEL_NAME, download_url=DOWNLOAD_URL):
             webbrowser.open(download_url)
         print('请安装完成后，重新启动本程序。')
         sys.exit(0)
+    matched = check_model_installed(model_keyword)
 
-    if not check_model_installed(model_name):
+    if matched is None:
         print('=' * 50)
-        print(f'检测到尚未下载所需模型：{model_name}')
+        print(f'检测到尚未下载所需模型：{model_keyword}')
         print('=' * 50)
         answer = input('是否现在下载？(y/n): ').strip().lower()
         if answer == 'y':
-            success = pull_model(model_name)
+            success = pull_model(model_keyword)
             if not success:
                 sys.exit(1)
+            matched = model_keyword
         else:
             print('未下载模型，程序无法继续运行。')
             sys.exit(0)
 
-    print('Ollama 环境检测通过。')
+    print(f'Ollama 环境检测通过。使用模型{matched}')
+    return matched
