@@ -5,7 +5,6 @@ from prompt_toolkit import prompt
 import asyncio
 import io
 import soundfile as sf
-from collections import deque
 
 import ollama
 import time
@@ -14,6 +13,20 @@ import json
 from pathlib import Path
 from ollama_setup import ensure_ollama_ready
 from save_path import SAVE_DIR, RECORDS
+from check_update import check_and_update
+import sys
+import subprocess
+
+if getattr(sys, 'frozen', False):
+    exe_path = Path(sys.executable)
+    try:
+        updated = check_and_update(exe_path)
+        if updated:
+            print('更新完成，即将重启...')
+            subprocess.Popen([str(exe_path)])
+            sys.exit(0)
+    except Exception as e:
+        print(f'更新失败，原因{e}\n直接使用当前版本')
 
 ensure_ollama_ready()
 
@@ -161,7 +174,7 @@ def correct_text(text=None, context=None, with_context=False, chat_mode=False):
 
     return response.message.content.strip()
 
-last_deque = load_json()
+last_deque = texts_list
 while True:
     p = prompt('输入英文(or type "chat")：')
     
