@@ -42,7 +42,7 @@ def check_model_installed(keyword=MODEL_KEYWORD):
                 return model_name
         return None
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return False
+        return None
 
 
 def pull_model(model_name):

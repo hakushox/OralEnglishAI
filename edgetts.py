@@ -21,8 +21,9 @@ print('正在启动SpeakNatural, 检查更新...')
 
 if getattr(sys, 'frozen', False):
     exe_path = Path(sys.executable)
+    app_dir = exe_path.parent
     try:
-        updated = check_and_update(exe_path)
+        updated = check_and_update(app_dir)
         if updated:
             print('更新完成，即将重启...')
             subprocess.Popen([str(exe_path)])
