@@ -12,7 +12,15 @@ def get_latest_version():
     resp = requests.get(GITHUB_API, timeout=10)
     resp.raise_for_status()
     data = resp.json()
-    return data['tag_name'], data['assets'][0]['browser_download_url']
+    version = data['tag_name']
+
+    download_url = None
+    for asset in data['assets']:
+        if 'launcher' not in asset['name'].lower():
+            download_url = asset['browser_download_url']
+            break
+
+    return version, download_url
 
 def check_and_update(exe_path):
     current_version = get_local_version()  # 内部自己查，不用外面传了

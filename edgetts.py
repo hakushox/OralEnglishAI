@@ -17,6 +17,8 @@ from check_update import check_and_update
 import sys
 import subprocess
 
+print('正在启动SpeakNatural, 检查更新...')
+
 if getattr(sys, 'frozen', False):
     exe_path = Path(sys.executable)
     try:
@@ -176,19 +178,33 @@ def correct_text(text=None, context=None, with_context=False, chat_mode=False):
 
 last_deque = texts_list
 while True:
-    p = prompt('输入英文(or type "chat")：')
+    p = prompt('输入英文(or type "/help" -> 查看其他口令)\n：').strip()
     
-    if p == '`' and len(last_deque) >= 1:
+    if p == '/l' and len(last_deque) >= 1:
         new = last_deque[-1]
         print(f'repeating: {new}')
         tts(new)
         continue
-    elif p == '``' and len(last_deque) >= 2:
+    elif p == '/ll' and len(last_deque) >= 2:
         new = last_deque[-2]
         print(f'repeating: {new}')
         tts(new)
         continue
-    elif p == 'chat':
+    elif p.lower() == '/help':
+        print('''**当看到输入英文(or type "/help" -> 查看其他口令）**时，
+              你可以输入  /chat ->进入闲聊模式
+                        /l ->重新朗读刚才的句子
+                        /ll ->重新朗读前一个句子
+                        /doc ->查看自己存储的学习记录''')
+        continue
+    elif p.lower() == '/doc':
+        if RECORDS.exists():
+            content = RECORDS.read_text(encoding='utf-8')
+            print(content)
+        else:
+            print('无记录')
+        continue
+    elif p.lower() == '/chat':
         while True:
             text_inquiry = prompt('你想聊什么？(press 2 to skip):')
             if text_inquiry == '2':
@@ -203,7 +219,7 @@ while True:
     new_c = correct_text(new)
     print(f'调整后： {new_c}')
     tts(new_c)
-    ask_save = prompt(f'是否保存？\n1->yes/ 2-> no/ 3-> play again / 4-> why fix it: ')
+    ask_save = prompt(f'是否保存？\n1->yes/ 2-> no/ 3-> play again / 4-> why fix it: ').strip()
 
     if ask_save == '1':
         write_json(new, new_c)
@@ -213,12 +229,10 @@ while True:
         tts(new_c)
     elif ask_save == '4':
         chat = correct_text(context=json.dumps({'draft':new, 'revised': new_c}), with_context=True)
-        print(chat)
         while True:
-            keep_asking = prompt("是否需要追问?(type 2 to skip): ")
+            keep_asking = prompt("\n是否需要追问?(type 2 to skip): ").strip()
             if keep_asking == '2':
                 break
             chat1 = correct_text(context=keep_asking, with_context=True)
-            print(chat1)
 
     
