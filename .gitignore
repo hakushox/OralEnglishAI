@@ -5,3 +5,4 @@ __pycache__/
 *.spec
 venv/
 *.app
+.DS_Store
