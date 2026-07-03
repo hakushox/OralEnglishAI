@@ -12,10 +12,13 @@ import threading
 import json
 from pathlib import Path
 from ollama_setup import ensure_ollama_ready
-from save_path import SAVE_DIR, RECORDS
+from save_path import SAVE_DIR, RECORDS, migrate_clean_invalid_records
 from check_update import check_and_update
 import sys
 import subprocess
+from review import review_patterns
+import webbrowser
+from urllib.parse import quote
 
 print('正在启动SpeakNatural, 检查更新...')
 
@@ -42,14 +45,26 @@ def load_json():
             return []
     return []
 
+migrate_clean_invalid_records()
 texts_list = load_json() 
 
-def write_json(draft, revised):
-    texts = {
-        'draft': draft, 'revised': revised,
-    }
-    texts_list.append(texts)
-    RECORDS.write_text(json.dumps(texts_list, ensure_ascii=False, indent= 4), encoding='utf-8')    
+def save_all():
+    """把当前内存里的 texts_list 整体写入文件，唯一的写文件出口"""
+    RECORDS.write_text(
+        json.dumps(texts_list, ensure_ascii=False, indent=4),
+        encoding='utf-8'
+    )
+
+def write_json(draft, revised, note=None):
+    """新增一条记录"""
+    if note is None:
+        note = []
+    texts_list.append({
+        'draft': draft,
+        'revised': revised,
+        'notes': note,
+    })
+    save_all()
 
 async def _speak(text, rate='+1%', voice='en-US-AriaNeural'):
     communicate = edge_tts.Communicate(text, voice, rate=rate)
@@ -127,7 +142,6 @@ def correct_text(text=None, context=None, with_context=False, chat_mode=False):
     # t = threading.Thread(target=timer)
     # t.start()
 
-
     if not with_context:
         response = ollama.chat(
             model=MODEL_NAME,
@@ -148,7 +162,7 @@ def correct_text(text=None, context=None, with_context=False, chat_mode=False):
                     *chat_history, #chat_history 是一个列表  应该用 *chat_history 展开
                 ],
                 stream=True,
-                options={'temperature': 0.4},think=False
+                options={'temperature': 0.2},think=False
             )
             # stop = True
             # t.join()
@@ -171,32 +185,53 @@ def correct_text(text=None, context=None, with_context=False, chat_mode=False):
             print('没有历史记录！')
 
     ellipsed = time.time() - now
-    print(f'耗时{ellipsed:.2f}...'+'=' * 30 + f'当前模型:{response.model}' + '='* 30)
+    print(f'耗时{ellipsed:.2f}...'+'=' * 20 + f'当前模型:{response.model}' + '='* 20)
     # stop = True
     # t.join()
 
     return response.message.content.strip()
 
-last_deque = texts_list
+def open_cambridge(word: str) -> str:
+    """在浏览器中打开剑桥词典查询指定单词"""
+    word = word.strip().lower()
+    if not word:
+        return "请输入要查询的单词,示例：/lookup apple"
+    encoded = quote(word)
+    url = f"https://dictionary.cambridge.org/dictionary/english/{encoded}"
+    try:
+        webbrowser.open(url)
+        return f"已在浏览器打开剑桥词典查询: {word}"
+    except Exception as e:
+        return f"打开浏览器失败: {e}"
+
+new = None
+new_c = None
+
 while True:
-    p = prompt('输入英文(or type "/help" -> 查看其他口令)\n：').strip()
+    p = prompt('输入英文(or type "/help" -> 查看其他口令)\n===>：').strip()
     
-    if p == '/l' and len(last_deque) >= 1:
-        new = last_deque[-1]
-        print(f'repeating: {new}')
-        tts(new)
+    if p == '/l':
+        if new is not None:
+            print(f'repeating: {new}')
+            tts(new)
+        else:
+            print('还未有可复述内容')
         continue
-    elif p == '/ll' and len(last_deque) >= 2:
-        new = last_deque[-2]
-        print(f'repeating: {new}')
-        tts(new)
+    elif p == '/ll':
+        if new_c is not None:
+            print(f'repeating: {new_c}')
+            tts(new_c)
+        else:
+            print('还未有可复述内容')
         continue
     elif p.lower() == '/help':
-        print('''**当看到输入英文(or type "/help" -> 查看其他口令）**时，
-              你可以输入  /chat ->进入闲聊模式
-                        /l ->重新朗读刚才的句子
-                        /ll ->重新朗读前一个句子
-                        /doc ->查看自己存储的学习记录''')
+        print('''**当看到输入英文(or type "/help" -> 查看其他口令）**，你可以输入:
+                /chat ->进入闲聊模式
+                /l ->重新朗读刚才的输入句
+                /ll ->重新朗读刚才的修改句
+                /doc ->查看自己存储的学习记录
+                /lookup 单词 ->打开权威词典查单词
+                /review ->分析自己的语法习惯''')
         continue
     elif p.lower() == '/doc':
         if RECORDS.exists():
@@ -205,6 +240,14 @@ while True:
         else:
             print('无记录')
         continue
+    elif p.lower().startswith('/lookup '):
+        word = p[len('/lookup '):].strip()
+        print(open_cambridge(word))
+        continue
+    elif p.lower() == '/review':
+        review_patterns(texts_list, MODEL_NAME)
+        continue
+
     elif p.lower() == '/chat':
         while True:
             text_inquiry = prompt('你想聊什么？(press 2 to skip):')
@@ -214,7 +257,6 @@ while True:
         continue
     else:
         new = p
-        last_deque.append(new)
 
     tts(new)
     new_c = correct_text(new)
@@ -231,9 +273,24 @@ while True:
     elif ask_save == '4':
         chat = correct_text(context=json.dumps({'draft':new, 'revised': new_c}), with_context=True)
         while True:
-            keep_asking = prompt("\n是否需要追问?(type 2 to skip): ").strip()
+            keep_asking = prompt("\n是否需要追问?(1 -> 保存本次分析/ 2 -> skip): ").strip()
             if keep_asking == '2':
                 break
-            chat1 = correct_text(context=keep_asking, with_context=True)
+            elif keep_asking == '1':
+                for i in texts_list:
+                    if i.get('revised') == new_c:
+                        if 'notes' not in i:
+                            i['note'] = []
+                        
+                        i['notes'].append(chat)
+                        save_all()
+                        print('已保存。')                        
+                        break
+                else:
+                    write_json(new, new_c, [chat])
+                    print('已保存完整结果')
+                keep_asking = prompt("\n是否需要追问?(2 -> skip): ").strip()
+                if keep_asking == '2':
+                    break
 
-    
+            chat = correct_text(context=keep_asking, with_context=True)

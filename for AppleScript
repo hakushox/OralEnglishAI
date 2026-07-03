@@ -1,13 +1,13 @@
 set scriptPath to (path to me as text)
 set appPath to POSIX path of scriptPath
-set execPath to appPath & "Contents/Resources/SpeakNatural"
+set execPath to appPath & "Contents/Resources/SpeakNatural/SpeakNatural"
 
 tell application "Terminal"
-    activate
-    do script quoted form of execPath
+	activate
+	do script "echo '====>正在启动，请稍后...' && " & quoted form of execPath
 end tell
 
 
 2. 复制文件、加权限:
-bashcp dist/SpeakNatural SpeakNaturalLauncher.app/Contents/Resources/
-chmod +x SpeakNaturalLauncher.app/Contents/Resources/SpeakNatural
+cp -R dist/SpeakNatural SpeakNaturalLauncher.app/Contents/Resources/
+chmod +x SpeakNaturalLauncher.app/Contents/Resources/SpeakNatural/SpeakNatural

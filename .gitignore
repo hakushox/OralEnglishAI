@@ -6,3 +6,5 @@ __pycache__/
 venv/
 *.app
 .DS_Store
+API_KEY.py
+test.py
