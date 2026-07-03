@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import datetime
 from pathlib import Path
 
 def get_save_dir():
@@ -53,3 +54,14 @@ def migrate_clean_invalid_records():
         print(f'检测到历史数据异常，已自动清理（原始 {len(data)} 条，清理后 {len(cleaned)} 条）')
 
     MIGRATION_FLAG.touch()   # 不管有没有清理到东西，都标记为"已处理过"
+
+
+CHAT_SUMMARY_LOG = SAVE_DIR / "chat_summaries.md"
+ 
+def save_chat_summary(summary_text):
+    """把一次深度对话的总结，追加写入到独立的 markdown 文件里"""
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+    entry = f"\n## {timestamp}\n{summary_text}\n"
+    with open(CHAT_SUMMARY_LOG, 'a', encoding='utf-8') as f:
+        f.write(entry)
+ 

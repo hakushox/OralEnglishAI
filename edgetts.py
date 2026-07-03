@@ -8,17 +8,21 @@ import soundfile as sf
 
 import ollama
 import time
-import threading
 import json
 from pathlib import Path
 from ollama_setup import ensure_ollama_ready
-from save_path import SAVE_DIR, RECORDS, migrate_clean_invalid_records
+from save_path import SAVE_DIR, RECORDS, migrate_clean_invalid_records, save_chat_summary
 from check_update import check_and_update
 import sys
 import subprocess
-from review import review_patterns
+from review import (
+    review_patterns, call_cloud_with_fallback, 
+    DEEP_ASK_SYSTEM_PROMPT, SUMMARY_PROMPT, call_local_stream, 
+    SAVE_NOTE_SUMMARY_PROMPT, CASUAL_CHAT_SYSTEM_PROMPT
+    )
 import webbrowser
 from urllib.parse import quote
+import os
 
 print('正在启动SpeakNatural, 检查更新...')
 
@@ -29,12 +33,13 @@ if getattr(sys, 'frozen', False):
         updated = check_and_update(app_dir)
         if updated:
             print('更新完成，即将重启...')
-            subprocess.Popen([str(exe_path)])
-            sys.exit(0)
+            os.execv(str(exe_path), [str(exe_path)])
     except Exception as e:
         print(f'更新失败，原因{e}\n直接使用当前版本')
 
 MODEL_NAME = ensure_ollama_ready()
+time.sleep(1.5) 
+os.system('cls' if os.name == 'nt' else 'clear')
 
 def load_json():
     if RECORDS.exists():
@@ -93,103 +98,27 @@ async def list_voices():
         if voice['Locale'].startswith('en'):
             print(f"Name: {voice['Name']}, Gender: {voice['Gender']}")
 
-chat_history = []
 
-def correct_text(text=None, context=None, with_context=False, chat_mode=False):
-    global chat_history
-    if not chat_history and not chat_mode:
-        chat_history.append({
-            'role': 'system', 'content': '''你是一个地道的英文语法纠正器，你需要将语句转换为更为地道的口语             
-             口语需要符合美剧的生活化，或者适合生活对话，要求非常美式的地道口语
-             你将接收到改动前（draft）和改动后(revised)的两个句子，你来分析改动的原因！
-             你的主要工作是针对改动前的句子来分析：
-             改动前的句子可能有语法，拼写，句子结构，短语等等问题，你需要指出！
-             如果语法没问题，也需要告知。
-             必须精简化回答，不要说废话，篇幅尽量短。
-             你的解释需要中文
-             如果revised的句意脱离了draft,你也需要指出,但这部分只需超精简，因为这不是重点！'''
-        })
-    if chat_mode:
-        chat_history.append({
-            'role': 'system', 'content': '''你是一个地道美式的地道口语专家
-            你可以对于任何关于英文使用的问题进行回答
-             必须精简化回答，不要说废话，篇幅尽量短。
-             你的解释需要中文
-             '''
-        })
-        
-    system_prompt = '''
-             你是一个地道的英文语法纠正器，你需要将语句转换为更为地道的口语             
-             口语需要符合美剧的生活化，或者适合生活对话，要求非常美式的地道口语
-             如果已经语句很完美了，则不需要变化。
-             除了最终语句，不要输出任何其他内容！'''
-    
-    if not with_context and not text and not chat_mode:
-        return
-
-    if with_context and context is None and not chat_mode:
-        return
-    
+CORRECT_SINGLE_SYSTEM_PROMPT = '''你是一个地道的英文语法纠正器，你需要将语句转换为更为地道的口语
+口语需要符合美剧的生活化，或者适合生活对话，要求非常美式的地道口语
+如果已经语句很完美了，则不需要变化。
+除了最终语句，不要输出任何其他内容！'''
+ 
+def correct_text(text):
+    """单句纠正，不带任何上下文，本地模型调用"""
     now = time.time()
-    # stop = False
-
-    # def timer():
-    #     while not stop:
-    #         ellipsed = time.time() - now
-    #         print(f'\r{ellipsed:.2f}...', end='', flush=True)
-    #         time.sleep(0.1)
-    
-    # t = threading.Thread(target=timer)
-    # t.start()
-
-    if not with_context:
-        response = ollama.chat(
-            model=MODEL_NAME,
-            messages=[
-                {'role':'system', 'content': system_prompt},
-                {'role': 'user', 'content': text}],
-                options={'temperature': 0.2},think=False
-            
-        )
-    else: 
-        if context is not None:
-            chat_history.append(
-            {'role': 'user', 'content': context}
-             )
-            response = ollama.chat(
-                model= MODEL_NAME,
-                messages=[
-                    *chat_history, #chat_history 是一个列表  应该用 *chat_history 展开
-                ],
-                stream=True,
-                options={'temperature': 0.2},think=False
-            )
-            # stop = True
-            # t.join()
-            # print() 
-            ellipsed = time.time() - now
-            print(f'耗时{ellipsed:.2f}...')
-
-            full_content=""
-            for chunk in response:
-                content = chunk['message']['content']
-                full_content += content
-                print(f'{content}', end='', flush=True)
-
-            chat_history.append(
-                {'role': 'assistant', 'content':full_content}
-            )
-
-            return full_content
-        else:
-            print('没有历史记录！')
-
-    ellipsed = time.time() - now
-    print(f'耗时{ellipsed:.2f}...'+'=' * 20 + f'当前模型:{response.model}' + '='* 20)
-    # stop = True
-    # t.join()
-
+    response = ollama.chat(
+        model=MODEL_NAME,
+        messages=[
+            {'role': 'system', 'content': CORRECT_SINGLE_SYSTEM_PROMPT},
+            {'role': 'user', 'content': text},
+        ],
+        options={'temperature': 0.2}, think=False
+    )
+    elapsed = time.time() - now
+    print(f'耗时{elapsed:.2f}...' + '=' * 20 + f'当前模型:{response.model}' + '=' * 20)
     return response.message.content.strip()
+ 
 
 def open_cambridge(word: str) -> str:
     """在浏览器中打开剑桥词典查询指定单词"""
@@ -203,6 +132,33 @@ def open_cambridge(word: str) -> str:
         return f"已在浏览器打开剑桥词典查询: {word}"
     except Exception as e:
         return f"打开浏览器失败: {e}"
+    
+CORRECTION_SYSTEM_PROMPT = '''你是一个地道的英文语法纠正器，你需要将语句转换为更为地道的口语
+口语需要符合美剧的生活化，或者适合生活对话，要求非常美式的地道口语
+你将接收到改动前（draft）和改动后(revised)的两个句子，你来分析改动的原因！
+你的主要工作是针对改动前的句子来分析：
+改动前的句子可能有语法，拼写，句子结构，短语等等问题，你需要指出！
+如果语法没问题，也需要告知。
+必须精简化回答，不要说废话，篇幅尽量短。
+你的解释需要中文
+如果revised的句意脱离了draft,你也需要指出,但这部分只需超精简，因为这不是重点！'''
+ 
+def ask_why_fixed_thread(draft, revised):
+    """开启一条针对本次修改的独立对话线索（不使用全局 chat_history）
+    返回 (messages, first_answer)，messages 之后可以继续追加、继续追问"""
+    context = json.dumps({'draft': draft, 'revised': revised}, ensure_ascii=False)
+    messages = [
+        {"role": "system", "content": CORRECTION_SYSTEM_PROMPT},
+        {"role": "user", "content": context},
+    ]
+    answer = call_cloud_with_fallback(messages, stream_print=True)
+    if answer is None:
+        print('云端不可用，使用本地模型分析...')
+        answer = call_local_stream(messages, MODEL_NAME)
+    if answer is None:
+        answer = '（分析生成失败，云端和本地模型均不可用）'
+    messages.append({'role': 'assistant', 'content': answer})
+    return messages, answer
 
 new = None
 new_c = None
@@ -226,7 +182,7 @@ while True:
         continue
     elif p.lower() == '/help':
         print('''**当看到输入英文(or type "/help" -> 查看其他口令）**，你可以输入:
-                /chat ->进入闲聊模式
+                /chat ->进入闲聊模式（内含 /deep 进入高端模型、/local 切回本地）
                 /l ->重新朗读刚才的输入句
                 /ll ->重新朗读刚才的修改句
                 /doc ->查看自己存储的学习记录
@@ -237,6 +193,15 @@ while True:
         if RECORDS.exists():
             content = RECORDS.read_text(encoding='utf-8')
             print(content)
+            warning = prompt('是否打开文件夹查看(注意：*不要移动，编辑文件内容，否则可能造成不可逆损失*)\n y/n?:')
+            if warning.strip().lower() == 'y':
+                if sys.platform == 'darwin':
+                    subprocess.Popen(['open', '-R', str(RECORDS)])
+                elif sys.platform == 'win32':
+                    subprocess.Popen(['explorer', '/select,', str(RECORDS)])
+                else:
+                    subprocess.Popen(['xdg-open', str(SAVE_DIR)])
+
         else:
             print('无记录')
         continue
@@ -249,12 +214,60 @@ while True:
         continue
 
     elif p.lower() == '/chat':
+        session_log = []
+        used_cloud = False
+        use_cloud_mode = False
+
         while True:
-            text_inquiry = prompt('你想聊什么？(press 2 to skip):')
+            mode_hint = '[DEEP]' if use_cloud_mode else '[LOCAL]'
+            text_inquiry = prompt(f'*{mode_hint}* 你想聊什么？\n(2->退出 /deep->解决难题 /local->快速提问):')
             if text_inquiry == '2':
                 break
-            correct_text(context=text_inquiry, with_context=True,chat_mode=True)
+
+            if text_inquiry.lower().strip() == '/deep':
+                if mode_hint == '[DEEP]':
+                    print('请直接输入你的问题！')
+                    continue
+                use_cloud_mode = True
+                print('已切换deep模式，请说出你的困惑')
+                continue
+            elif text_inquiry.lower().strip() == '/local':
+                if mode_hint == '[LOCAL]':
+                    print('请直接输入你的问题！')
+                    continue
+                use_cloud_mode = False
+                print('已切回快速模式，请说出你的问题')
+                continue
+
+            session_log.append({'role': 'user', 'content': text_inquiry})
+ 
+            if use_cloud_mode:
+                cloud_messages = [{"role": "system", "content": DEEP_ASK_SYSTEM_PROMPT}] + session_log
+                answer = call_cloud_with_fallback(cloud_messages, temperature=0.5)
+                if answer is None:
+                    print('云端不可用，本次改用本地模型回答')
+                    local_messages = [{"role": "system", "content": CASUAL_CHAT_SYSTEM_PROMPT}] + session_log
+                    answer = call_local_stream(local_messages, MODEL_NAME)                
+                else:
+                    used_cloud = True
+            else:
+                local_messages = [{"role": "system", "content": CASUAL_CHAT_SYSTEM_PROMPT}] + session_log
+                answer = call_local_stream(local_messages, MODEL_NAME)
+            if answer is None:
+                answer = '（回答生成失败，云端和本地模型均不可用）'
+
+            session_log.append({'role': 'assistant', 'content': answer})
+
+        if used_cloud and session_log:
+            summary = call_cloud_with_fallback(
+                session_log + [{'role': 'user', 'content': SUMMARY_PROMPT}],
+                stream_print=False
+            )
+            if summary:
+                save_chat_summary(summary)
+                print(f'\n[本次对话已总结保存]\n{summary}')
         continue
+
     else:
         new = p
 
@@ -271,26 +284,58 @@ while True:
         print(f'repeating: {new_c}')
         tts(new_c)
     elif ask_save == '4':
-        chat = correct_text(context=json.dumps({'draft':new, 'revised': new_c}), with_context=True)
+        thread, chat = ask_why_fixed_thread(new, new_c)
+        rounds = 0
+        saved = False
+        last_saved_index = None
         while True:
-            keep_asking = prompt("\n是否需要追问?(1 -> 保存本次分析/ 2 -> skip): ").strip()
+            keep_asking = prompt("\n还有什么不解?\n(或1 -> 保存本次分析/ 2 -> skip): ").strip()
             if keep_asking == '2':
                 break
             elif keep_asking == '1':
+                if saved:
+                    print('请勿重复保存！')
+                    continue
+                if rounds > 2:
+                    summary_request = thread + [{'role': 'user', 'content': SAVE_NOTE_SUMMARY_PROMPT}]
+                    to_save = call_cloud_with_fallback(summary_request, stream_print=True)
+                    if to_save is None:
+                        to_save = call_local_stream(summary_request, MODEL_NAME)
+                else:
+                    to_save = chat
+
+                if to_save is None:
+                    print('总结生成失败（云端和本地均不可用），改为保存最近一次回复')
+                    to_save = chat if chat is not None else '（分析生成失败，未保存有效内容）'
+
                 for i in texts_list:
                     if i.get('revised') == new_c:
                         if 'notes' not in i:
-                            i['note'] = []
-                        
-                        i['notes'].append(chat)
+                            i['notes'] = []      
+                        if last_saved_index is not None and 0 <= last_saved_index < len(i['notes']):                                       
+                            i['notes'][last_saved_index] = to_save
+                        else:
+                            i['notes'].append(to_save)
+                            last_saved_index = len(i['notes']) - 1 
+
                         save_all()
                         print('已保存。')                        
                         break
                 else:
-                    write_json(new, new_c, [chat])
+                    write_json(new, new_c, [to_save])
+                    last_saved_index = 0
                     print('已保存完整结果')
-                keep_asking = prompt("\n是否需要追问?(2 -> skip): ").strip()
-                if keep_asking == '2':
-                    break
 
-            chat = correct_text(context=keep_asking, with_context=True)
+                saved = True
+
+            else:
+                rounds += 1
+                saved = False
+                thread.append({'role': 'user', 'content': keep_asking})
+                chat = call_cloud_with_fallback(thread,stream_print=True)
+                if chat is None:
+                    chat = call_local_stream(thread, MODEL_NAME)
+                if chat is None:
+                    chat = '（回答生成失败，云端和本地模型均不可用）'
+                thread.append({'role': 'assistant', 'content': chat})
+
