@@ -23,6 +23,8 @@ from review import (
 import webbrowser
 from urllib.parse import quote
 import os
+import random
+import hashlib
 
 print('正在启动SpeakNatural, 检查更新...')
 
@@ -72,25 +74,84 @@ def write_json(draft, revised, note=None):
     save_all()
 
 async def _speak(text, rate='+1%', voice='en-US-AriaNeural'):
-    communicate = edge_tts.Communicate(text, voice, rate=rate)
-    buffer = io.BytesIO()
-    async for chunk in communicate.stream():
-        if chunk['type'] == 'audio':
-            buffer.write(chunk['data'])
-    buffer.seek(0)
-    return buffer
+    try:
+        communicate = edge_tts.Communicate(text, voice, rate=rate)
+        buffer = io.BytesIO()
+        async for chunk in communicate.stream():
+            if chunk['type'] == 'audio':
+                buffer.write(chunk['data'])
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        print(f'语音生成失败（可能网络连接问题）：{str(e)[:20]}')
+        return None
 
 def tts(text, rate='+1%'):
     # text = text.replace('*','~')
     def _run():
         sd.stop()
         buffer = asyncio.run(_speak(text, rate=rate))
+        if buffer is None:
+            return
         data, samplerate = sf.read(buffer)
         sd.play(data, samplerate)
         sd.wait()
     t1 = threading.Thread(target=_run, daemon=False)
     t1.start()
     t1.join()
+
+GREETINGS = [
+    "Hey, ready to practice some English?",
+    "Let's get that English flowing today.",
+    "Welcome back! Time to sound more natural.",
+    "Alright, let's polish up your English.",
+    "Good to see you. Let's dive in.",
+]
+
+GREETING_DIR = SAVE_DIR / 'greetings'
+
+async def _pregenerate_greetings():
+    valid_names = set()
+    for text in GREETINGS:
+        h = hashlib.md5(text.encode()).hexdigest()[:8]
+        filename = f'greeting_{h}.mp3'
+        valid_names.add(filename)
+        path = GREETING_DIR / filename
+        if path.exists():
+            continue
+        buffer = await _speak(text)
+        if buffer is None:
+            continue
+        path.write_bytes(buffer.read())
+
+    for f in GREETING_DIR.glob('greeting_*.mp3'):
+        if f.name not in valid_names:
+            f.unlink()
+
+def start_greeting():
+    """启动时调用：立即生成并播放一条问候语，其余在后台线程慢慢补全"""
+    GREETING_DIR.mkdir(parents=True, exist_ok=True)
+
+    text = random.choice(GREETINGS)
+    h = hashlib.md5(text.encode()).hexdigest()[:8]
+    path = GREETING_DIR / f'greeting_{h}.mp3'
+
+    if not path.exists():
+        buffer = asyncio.run(_speak(text))
+        if buffer is None:
+            return
+        path.write_bytes(buffer.read())
+
+    data, samplerate = sf.read(path)
+    sd.stop()
+    sd.play(data, samplerate)
+    sd.wait()
+
+    # 剩下的在后台线程里慢慢生成，不阻塞主程序
+    threading.Thread(target=lambda: asyncio.run(_pregenerate_greetings()), daemon=True).start()
+
+start_greeting()
+
 
 async def list_voices():
     voices = await edge_tts.list_voices()
@@ -136,12 +197,14 @@ def open_cambridge(word: str) -> str:
 CORRECTION_SYSTEM_PROMPT = '''你是一个地道的英文语法纠正器，你需要将语句转换为更为地道的口语
 口语需要符合美剧的生活化，或者适合生活对话，要求非常美式的地道口语
 你将接收到改动前（draft）和改动后(revised)的两个句子，你来分析改动的原因！
-你的主要工作是针对改动前的句子来分析：
+你的主要工作是针对改动前的draft句子来分析：
 改动前的句子可能有语法，拼写，句子结构，短语等等问题，你需要指出！
-如果语法没问题，也需要告知。
-必须精简化回答，不要说废话，篇幅尽量短。
-你的解释需要中文
-如果revised的句意脱离了draft,你也需要指出,但这部分只需超精简，因为这不是重点！'''
+
+具体要求：
+- 如果draft语法没问题，你需要告知。
+- 重要：你要先在draft基础上，尽量保持原句用词，改成语法正确的形式。并说明清楚为什么这样改！
+- 然后分析为什么revised句子的合理性。如果revised的句意脱离了draft,你也需要指出,但这部分只需超精简，因为这不是重点
+- 解释需要中文，必须精简化回答，不要说废话，篇幅尽量短！'''
  
 def ask_why_fixed_thread(draft, revised):
     """开启一条针对本次修改的独立对话线索（不使用全局 chat_history）
@@ -265,7 +328,7 @@ while True:
             )
             if summary:
                 save_chat_summary(summary)
-                print(f'\n[本次对话已总结保存]\n{summary}')
+                print(f'\n[本次对话已总结保存]\n{summary}\n'+ '-' * 20)
         continue
 
     else:
@@ -275,67 +338,80 @@ while True:
     new_c = correct_text(new)
     print(f'调整后： {new_c}')
     tts(new_c)
-    ask_save = prompt(f'是否保存？\n1->yes/ 2-> no/ 3-> play again / 4-> why fix it: ').strip()
 
-    if ask_save == '1':
-        write_json(new, new_c)
-        print(f'json已记录。总共{len(texts_list)}条')
-    elif ask_save == '3':
-        print(f'repeating: {new_c}')
-        tts(new_c)
-    elif ask_save == '4':
-        thread, chat = ask_why_fixed_thread(new, new_c)
-        rounds = 0
-        saved = False
-        last_saved_index = None
-        while True:
-            keep_asking = prompt("\n还有什么不解?\n(或1 -> 保存本次分析/ 2 -> skip): ").strip()
-            if keep_asking == '2':
-                break
-            elif keep_asking == '1':
-                if saved:
-                    print('请勿重复保存！')
-                    continue
-                if rounds > 2:
-                    summary_request = thread + [{'role': 'user', 'content': SAVE_NOTE_SUMMARY_PROMPT}]
-                    to_save = call_cloud_with_fallback(summary_request, stream_print=True)
+    saved_1 = False
+
+    while True:
+        ask_save = prompt(f'是否保存？\n1->yes/ 2-> no/ 3-> play again / 4-> why fix it: ').strip()
+        
+        if ask_save == '1':
+            if saved_1:
+                print('已经保存过了。')
+                continue
+            write_json(new, new_c)
+            saved_1 = True
+            print('-' * 10 + f'json已记录。总共{len(texts_list)}条' + '-' * 10)
+            continue
+        elif ask_save == '2':
+            break
+        elif ask_save == '3':
+            print(f'repeating: {new_c}')
+            tts(new_c)
+            continue
+        elif ask_save == '4':
+            thread, chat = ask_why_fixed_thread(new, new_c)
+            rounds = 0
+            saved = False
+            last_saved_index = None
+            while True:
+                keep_asking = prompt("\n还有什么不解?\n(或1 -> 保存本次分析/ 2 -> skip): ").strip()
+                if keep_asking == '2':
+                    break
+                elif keep_asking == '1':
+                    if saved:
+                        print('请勿重复保存！')
+                        continue
+                    if rounds > 2:
+                        summary_request = thread + [{'role': 'user', 'content': SAVE_NOTE_SUMMARY_PROMPT}]
+                        to_save = call_cloud_with_fallback(summary_request, stream_print=True)
+                        if to_save is None:
+                            to_save = call_local_stream(summary_request, MODEL_NAME)
+                    else:
+                        to_save = chat
+
                     if to_save is None:
-                        to_save = call_local_stream(summary_request, MODEL_NAME)
+                        print('总结生成失败（云端和本地均不可用），改为保存最近一次回复')
+                        to_save = chat if chat is not None else '（分析生成失败，未保存有效内容）'
+
+                    for i in texts_list:
+                        if i.get('revised') == new_c:
+                            if 'notes' not in i:
+                                i['notes'] = []      
+                            if last_saved_index is not None and 0 <= last_saved_index < len(i['notes']):                                       
+                                i['notes'][last_saved_index] = to_save
+                            else:
+                                i['notes'].append(to_save)
+                                last_saved_index = len(i['notes']) - 1 
+
+                            save_all()
+                            print('已保存。')                        
+                            break
+                    else:
+                        write_json(new, new_c, [to_save])
+                        last_saved_index = 0
+                        print('-' * 10 + '已保存完整结果' + '-' * 10 )
+
+                    saved = True
+
                 else:
-                    to_save = chat
-
-                if to_save is None:
-                    print('总结生成失败（云端和本地均不可用），改为保存最近一次回复')
-                    to_save = chat if chat is not None else '（分析生成失败，未保存有效内容）'
-
-                for i in texts_list:
-                    if i.get('revised') == new_c:
-                        if 'notes' not in i:
-                            i['notes'] = []      
-                        if last_saved_index is not None and 0 <= last_saved_index < len(i['notes']):                                       
-                            i['notes'][last_saved_index] = to_save
-                        else:
-                            i['notes'].append(to_save)
-                            last_saved_index = len(i['notes']) - 1 
-
-                        save_all()
-                        print('已保存。')                        
-                        break
-                else:
-                    write_json(new, new_c, [to_save])
-                    last_saved_index = 0
-                    print('已保存完整结果')
-
-                saved = True
-
-            else:
-                rounds += 1
-                saved = False
-                thread.append({'role': 'user', 'content': keep_asking})
-                chat = call_cloud_with_fallback(thread,stream_print=True)
-                if chat is None:
-                    chat = call_local_stream(thread, MODEL_NAME)
-                if chat is None:
-                    chat = '（回答生成失败，云端和本地模型均不可用）'
-                thread.append({'role': 'assistant', 'content': chat})
+                    rounds += 1
+                    saved = False
+                    thread.append({'role': 'user', 'content': keep_asking})
+                    chat = call_cloud_with_fallback(thread,stream_print=True)
+                    if chat is None:
+                        chat = call_local_stream(thread, MODEL_NAME)
+                    if chat is None:
+                        chat = '（回答生成失败，云端和本地模型均不可用）'
+                    thread.append({'role': 'assistant', 'content': chat})
+            break
 
