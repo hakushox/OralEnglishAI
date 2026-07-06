@@ -1,0 +1,16 @@
+pyinstaller --name SpeakNatural --icon=images/icon.icns --collect-all sounddevice edgetts.py 
+
+zip -r SpeakNatural-macos.zip SpeakNatural
+
+rm SpeakNaturalLauncher.app/Contents/Resources/SpeakNatural
+rm -rf SpeakNaturalLauncher.app/Contents/Resources/SpeakNatural
+cp -R dist/SpeakNatural SpeakNaturalLauncher.app/Contents/Resources/
+chmod +x SpeakNaturalLauncher.app/Contents/Resources/SpeakNatural/SpeakNatural
+
+确认：
+ls -la SpeakNaturalLauncher.app/Contents/Resources/
+
+
+git add .
+git commit --amend --no-edit
+git push --force

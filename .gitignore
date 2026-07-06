@@ -8,4 +8,5 @@ venv/
 .DS_Store
 API_KEY.py
 test.py
-notes
+
+.vscode
