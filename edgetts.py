@@ -26,6 +26,9 @@ import os
 import random
 import hashlib
 
+from groq_tts import synthesize_with_groq_tts
+
+
 print('正在启动SpeakNatural, 检查更新...')
 
 if getattr(sys, 'frozen', False):
@@ -101,54 +104,57 @@ def tts(text, rate='+1%'):
     t1.join()
 
 GREETINGS = [
-    "Hey, ready to practice some English?",
-    "Let's get that English flowing today.",
-    "Welcome back! Time to sound more natural.",
-    "Alright, let's polish up your English.",
-    "Good to see you. Let's dive in.",
+    "[excited]Hey, ready to practice some English?",
+    "[excited]Let's get that English flowing today",
+    "[excited]Welcome back! Time to sound more natural",
+    "[excited]Alright, let's polish up your English",
+    "[excited]Good to see you. Let's dive in",
 ]
 
 GREETING_DIR = SAVE_DIR / 'greetings'
 
-async def _pregenerate_greetings():
+def _pregenerate_greetings():
+    """依次把剩余的问候语补全，跑在后台线程里，不阻塞主程序"""
     valid_names = set()
     for text in GREETINGS:
         h = hashlib.md5(text.encode()).hexdigest()[:8]
-        filename = f'greeting_{h}.mp3'
+        filename = f'greeting_{h}.wav'
         valid_names.add(filename)
         path = GREETING_DIR / filename
         if path.exists():
             continue
-        buffer = await _speak(text)
+ 
+        buffer = synthesize_with_groq_tts(text)
         if buffer is None:
             continue
         path.write_bytes(buffer.read())
-
-    for f in GREETING_DIR.glob('greeting_*.mp3'):
+ 
+    for f in GREETING_DIR.glob('greeting_*.wav'):
         if f.name not in valid_names:
             f.unlink()
-
+ 
+ 
 def start_greeting():
     """启动时调用：立即生成并播放一条问候语，其余在后台线程慢慢补全"""
     GREETING_DIR.mkdir(parents=True, exist_ok=True)
-
+ 
     text = random.choice(GREETINGS)
     h = hashlib.md5(text.encode()).hexdigest()[:8]
-    path = GREETING_DIR / f'greeting_{h}.mp3'
-
+    path = GREETING_DIR / f'greeting_{h}.wav'
+ 
     if not path.exists():
-        buffer = asyncio.run(_speak(text))
+        buffer = synthesize_with_groq_tts(text)
         if buffer is None:
             return
         path.write_bytes(buffer.read())
-
+ 
     data, samplerate = sf.read(path)
     sd.stop()
     sd.play(data, samplerate)
     sd.wait()
-
+ 
     # 剩下的在后台线程里慢慢生成，不阻塞主程序
-    threading.Thread(target=lambda: asyncio.run(_pregenerate_greetings()), daemon=True).start()
+    threading.Thread(target=_pregenerate_greetings, daemon=True).start()
 
 start_greeting()
 
@@ -225,6 +231,7 @@ def ask_why_fixed_thread(draft, revised):
 
 new = None
 new_c = None
+pro_audio_buffer = None
 
 while True:
     p = prompt('输入英文(or type "/help" -> 查看其他口令)\n===>：').strip()
@@ -238,8 +245,24 @@ while True:
         continue
     elif p == '/ll':
         if new_c is not None:
-            print(f'repeating: {new_c}')
-            tts(new_c)
+            if pro_audio_buffer is not None:
+                pro_audio_buffer.seek(0)
+                data, samplerate = sf.read(pro_audio_buffer)
+                sd.stop()
+                sd.play(data, samplerate)
+                sd.wait()
+            else:
+                buffer = synthesize_with_groq_tts(f'[professionally]+{new_c}')
+                if buffer is not None:
+                    pro_audio_buffer = buffer
+                    print(f'repeating[pro]: {new_c}')
+                    data, samplerate = sf.read(buffer)
+                    sd.stop()
+                    sd.play(data,samplerate)
+                    sd.wait()
+                else:
+                    print(f'repeating: {new_c}')
+                    tts(new_c)
         else:
             print('还未有可复述内容')
         continue
@@ -338,6 +361,7 @@ while True:
     new_c = correct_text(new)
     print(f'调整后： {new_c}')
     tts(new_c)
+    pro_audio_buffer = None
 
     saved_1 = False
 
@@ -355,8 +379,24 @@ while True:
         elif ask_save == '2':
             break
         elif ask_save == '3':
-            print(f'repeating: {new_c}')
-            tts(new_c)
+            if pro_audio_buffer is not None:
+                pro_audio_buffer.seek(0)
+                data, samplerate = sf.read(pro_audio_buffer)
+                sd.stop()
+                sd.play(data, samplerate)
+                sd.wait()
+            else:
+                buffer = synthesize_with_groq_tts(f'[professionally]+{new_c}')
+                if buffer is not None:
+                    pro_audio_buffer = buffer
+                    print(f'repeating[pro]: {new_c}')
+                    data, samplerate = sf.read(buffer)
+                    sd.stop()
+                    sd.play(data, samplerate)
+                    sd.wait()
+                else:
+                    print(f'repeating: {new_c}')
+                    tts(new_c)
             continue
         elif ask_save == '4':
             thread, chat = ask_why_fixed_thread(new, new_c)

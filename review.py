@@ -80,21 +80,38 @@ CASUAL_CHAT_SYSTEM_PROMPT = '''你是一个地道美式的口语专家。
 你可以对于任何关于英文使用的问题进行回答。
 必须精简化回答，不要说废话，篇幅尽量短。
 你的解释主要使用中文，可以有部分英文运用。'''
- 
 
+
+# name 字段用来在下面路由逻辑里区分不同供应商的 header 命名规则
 PROVIDERS = [
-        {
+    {
+        'name': 'cerebras',
         'client': OpenAI(api_key=CEREBRAS_API_KEY, base_url='https://api.cerebras.ai/v1'),
         'models': ['gpt-oss-120b']
     },
     {
+        'name': 'groq',
         'client': OpenAI(api_key=GROQ_API_KEY, base_url='https://api.groq.com/openai/v1'),
-        'models': ['llama-3.3-70b-versatile', 'qwen-qwen3-32b']
+        'models': ['openai/gpt-oss-120b', 'qwen/qwen3.6-27b']
     },
 ]
 
 CLIENT_INDEX = 0
 MODEL_INDEX = 0
+
+# 记录每个 provider 上次调用后的剩余额度，供下次调用前预判是否值得尝试
+# 结构: {'cerebras': {'tokens': int, 'requests': int}, 'groq': {...}}
+provider_status = {p['name']: {'tokens': None, 'requests': None} for p in PROVIDERS}
+
+
+def get_provider_by_name(name: str):
+    for p in PROVIDERS:
+        if p['name'] == name:
+            return p['client']
+    raise ValueError(f"没有找到名为 {name} 的 provider")
+
+def get_current_provider():
+    return PROVIDERS[CLIENT_INDEX]
 
 def get_current_client():
     return PROVIDERS[CLIENT_INDEX]['client']
@@ -115,51 +132,94 @@ def switch_model():
         MODEL_INDEX = 0
         print('已到达模型列表末尾，回到开头')
         return False
-        # raise Exception('所有模型已耗尽')
     print(f'切换到：{PROVIDERS[CLIENT_INDEX]["client"].base_url} / {get_current_model()}')
     return True
 
-def review_patterns(texts_list, model_name):
-    """分析用户最近的练习记录，找出反复出现的表达习惯问题"""
-    drafts = [t['draft'] for t in texts_list[-30:] if isinstance(t, dict) and 'draft' in t]
-    if not drafts:
-        print('暂无历史记录')
-        return
-    print(f'本次调取学习档案中的最近{len(drafts)} / {len(texts_list)}条记录')
-    numbered = '\n'.join(f'{i+1}. {d}' for i, d in enumerate(drafts))
-    user_prompt = f'以下是用户最近{len(drafts)}句英语练习原句，请按要求分析:\n\n{numbered}'
-    messages = [
-            {"role": "system", "content": REVIEW_SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ]
-    
-    result = call_cloud_with_fallback(messages, stream_print=True)
-    if result is not None:
-        return result
 
-    print('所有云端模型均不可用，切换到本地模型...')
-    print('[本地分析结果，准确度可能有限]')
-    return call_local_stream(messages, model_name)
+# ============ 额度感知路由相关 ============
+
+def estimate_tokens(messages) -> int:
+    """粗略估算这次请求的总字符量对应的 token 数，不追求精确"""
+    total_chars = sum(len(m.get('content', '')) for m in messages)
+    return int(total_chars / 1.5)
 
 
-def call_cloud_with_fallback(messages, stream_print=True, max_attempts=2, temperature=0.2):
+def extract_remaining(name: str, headers) -> dict:
+    """不同供应商 header 命名不一样，分别取出剩余 tokens 和 requests"""
+    if name == 'cerebras':
+        tokens = headers.get('x-ratelimit-remaining-tokens-minute')
+        requests = headers.get('x-ratelimit-remaining-requests-minute')
+    elif name == 'groq':
+        tokens = headers.get('x-ratelimit-remaining-tokens')
+        requests = headers.get('x-ratelimit-remaining-requests')  # Groq 这个是"每日"口径
+    else:
+        tokens = requests = None
+    return {
+        'tokens': int(tokens) if tokens is not None else None,
+        'requests': int(requests) if requests is not None else None,
+    }
+
+
+def should_skip(name: str, messages) -> bool:
+    """根据上次记录的剩余额度，判断这次要不要干脆别试这个 provider"""
+    status = provider_status.get(name, {})
+    remaining_tokens = status.get('tokens')
+    remaining_requests = status.get('requests')
+
+    # 请求数（尤其 Cerebras 每分钟只有 5 次）告急，直接跳过
+    if remaining_requests is not None and remaining_requests < 1:
+        return True
+
+    # token 余量明显不够这次请求，跳过
+    if remaining_tokens is not None:
+        estimated = estimate_tokens(messages)
+        if remaining_tokens < estimated * 1.2:
+            return True
+
+    return False
+
+
+# ============ 云端调用（带额度预判 + 失败兜底） ============
+
+def call_cloud_with_fallback(messages, stream_print=True, max_attempts=None, temperature=0.2):
     """
     通用云端调用，自动在多个 provider/model 之间轮询重试。
-    记住上次成功的位置：下次调用从该位置继续尝试，失败则自动往后轮询。
+    调用前先检查上次记录的剩余额度，明显不够就直接跳过，减少无谓的失败等待；
+    真正调用失败时依然走 except 兜底，逻辑不变。
     成功返回完整回复文本；全部尝试失败返回 None。
     """
+    total_models = sum(len(p['models']) for p in PROVIDERS)
+    if max_attempts is None:
+        max_attempts = total_models  # 默认把所有 provider/model 组合都试一遍，别提前放弃
+
     for attempt in range(max_attempts):
+        name = get_current_provider()['name']
+
+        if should_skip(name, messages):
+            print(f'[{name}] 额度可能不够，跳过')
+            switch_model()
+            continue
+
         try:
-            response = get_current_client().chat.completions.create(
+            raw_response = get_current_client().chat.completions.with_raw_response.create(
                 model=get_current_model(),
                 messages=messages,
                 temperature=temperature,
                 stream=True,
             )
+
+            # 记录这次调用后的剩余额度，供下次调用前参考
+            remaining = extract_remaining(name, raw_response.headers)
+            provider_status[name] = remaining
+
+            stream = raw_response.parse()  # 拿到真正可迭代的流对象
+
             if stream_print:
-                print(f'模型{get_current_model()}分析结果：')
+                print(f'模型{get_current_provider()['name']} -> {get_current_model()}分析结果：')
+                print()
+                print('-'*50)
             full_content = ''
-            for chunk in response:
+            for chunk in stream:
                 delta = chunk.choices[0].delta.content
                 if delta:
                     full_content += delta
@@ -167,12 +227,14 @@ def call_cloud_with_fallback(messages, stream_print=True, max_attempts=2, temper
                         print(delta, end='', flush=True)
             if stream_print:
                 print()
+                print('-'*50)
             return full_content
+
         except Exception as e:
             print(f'{get_current_model()} 失败: {str(e)[:30]}...')
             switch_model()
     return None
- 
+
 
 def call_local_stream(messages, model_name, temperature=0.2):
     try:
@@ -193,5 +255,26 @@ def call_local_stream(messages, model_name, temperature=0.2):
     except Exception as e2:
         print(f'本地分析也失败了: {e2}')
         return None
- 
- 
+
+
+def review_patterns(texts_list, model_name):
+    """分析用户最近的练习记录，找出反复出现的表达习惯问题"""
+    drafts = [t['draft'] for t in texts_list[-30:] if isinstance(t, dict) and 'draft' in t]
+    if not drafts:
+        print('暂无历史记录')
+        return
+    print(f'本次调取学习档案中的最近{len(drafts)} / {len(texts_list)}条记录')
+    numbered = '\n'.join(f'{i+1}. {d}' for i, d in enumerate(drafts))
+    user_prompt = f'以下是用户最近{len(drafts)}句英语练习原句，请按要求分析:\n\n{numbered}'
+    messages = [
+            {"role": "system", "content": REVIEW_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+
+    result = call_cloud_with_fallback(messages, stream_print=True)
+    if result is not None:
+        return result
+
+    print('所有云端模型均不可用，切换到本地模型...')
+    print('[本地分析结果，准确度可能有限]')
+    return call_local_stream(messages, model_name)

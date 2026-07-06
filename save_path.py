@@ -65,3 +65,5 @@ def save_chat_summary(summary_text):
     with open(CHAT_SUMMARY_LOG, 'a', encoding='utf-8') as f:
         f.write(entry)
  
+
+# os.startfile(SAVE_DIR)

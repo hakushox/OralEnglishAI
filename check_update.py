@@ -10,19 +10,36 @@ import shutil
 
 GITHUB_API = 'https://api.github.com/repos/hakushox/OralEnglishAI/releases/latest'
 
+def get_platform_tag():
+    # ← 新增：把 sys.platform 映射成 release 文件名里约定的平台标识
+    if sys.platform == "win32":
+        return "windows"
+    elif sys.platform == "darwin":
+        return "macos"
+    else:
+        raise RuntimeError(f"不支持的平台: {sys.platform}")
+    
 def get_latest_version():
     resp = requests.get(GITHUB_API, timeout=10)
     resp.raise_for_status()
     data = resp.json()
     version = data['tag_name']
 
+    platform_tag = get_platform_tag()
     download_url = None
     for asset in data['assets']:
-        if 'launcher' not in asset['name'].lower():
+        name_lower = asset['name'].lower()
+        if 'launcher' in name_lower:
+            continue
+        if platform_tag in name_lower:
             download_url = asset['browser_download_url']
             break
 
+    if download_url is None:
+        raise RuntimeError(f"未在 release 中找到匹配 {platform_tag} 平台的安装包")
+
     return version, download_url
+
 
 def check_and_update(app_dir):
     # ← 改动：参数名从 exe_path 改成 app_dir，语义上更准确（这是个文件夹）
@@ -63,7 +80,8 @@ def check_and_update(app_dir):
     shutil.rmtree(temp_extract_dir, ignore_errors=True)
 
     # ← 改动：原来直接对 exe_path 加权限，现在要先定位到文件夹内部的可执行文件
-    exe_file = app_dir / 'SpeakNatural'
+    exe_name = 'SpeakNatural.exe' if sys.platform == "win32" else 'SpeakNatural'
+    exe_file = app_dir / exe_name
     if sys.platform != "win32":
         st = os.stat(exe_file)
         os.chmod(exe_file, st.st_mode | stat.S_IXUSR)
