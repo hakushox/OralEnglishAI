@@ -215,7 +215,7 @@ def call_cloud_with_fallback(messages, stream_print=True, max_attempts=None, tem
             stream = raw_response.parse()  # 拿到真正可迭代的流对象
 
             if stream_print:
-                print(f'模型{get_current_provider()['name']} -> {get_current_model()}分析结果：')
+                print(f"模型{get_current_provider()['name']} -> {get_current_model()}分析结果：")
                 print()
                 print('-'*50)
             full_content = ''
