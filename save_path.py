@@ -64,6 +64,47 @@ def save_chat_summary(summary_text):
     entry = f"\n## {timestamp}\n{summary_text}\n"
     with open(CHAT_SUMMARY_LOG, 'a', encoding='utf-8') as f:
         f.write(entry)
+
+PARSE_SUMMARY_LOG = SAVE_DIR / "parse_summaries.md"
  
+def save_parse_summary(summary_text):
+    """写入到独立的 markdown 文件里"""
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+    entry = f"\n## {timestamp}\n{summary_text}\n"
+    with open(PARSE_SUMMARY_LOG, 'a', encoding='utf-8') as f:
+        f.write(entry)
+
+WORDS_SUMMARY_LOG = SAVE_DIR / "words_summaries.json"
+ 
+def save_word_summary(word, usage):
+    """把一次单词学习写入到独立的 json 文件里"""
+    if WORDS_SUMMARY_LOG.exists():
+        with open(WORDS_SUMMARY_LOG, 'r', encoding='utf-8') as f:
+            datas = json.load(f)
+    else:
+        datas = []
+                
+    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+    data = {'word': word, 'usage': usage, 'time': timestamp}
+    datas.append(data)
+
+    with open(WORDS_SUMMARY_LOG, 'w', encoding='utf-8') as f:
+        json.dump(datas, f, ensure_ascii=False, indent=4)
+
+def update_word_proficiency(word, proficiency, issue):
+    """测验结束后，把某个单词的熟练度和问题点写回单词本"""
+    if not WORDS_SUMMARY_LOG.exists():
+        return
+    with open(WORDS_SUMMARY_LOG, 'r', encoding='utf-8') as f:
+        datas = json.load(f)
+
+    for item in datas:
+        if item.get('word') == word:
+            item['proficiency'] = proficiency
+            item['issue'] = issue
+            break
+
+    with open(WORDS_SUMMARY_LOG, 'w', encoding='utf-8') as f:
+        json.dump(datas, f, ensure_ascii=False, indent=4)
 
 # os.startfile(SAVE_DIR)

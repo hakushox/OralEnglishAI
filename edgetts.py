@@ -2,6 +2,7 @@ import edge_tts
 import sounddevice as sd
 import threading
 from prompt_toolkit import prompt
+from prompt_toolkit.completion import Completer, Completion
 import asyncio
 import io
 import soundfile as sf
@@ -11,14 +12,15 @@ import time
 import json
 from pathlib import Path
 from ollama_setup import ensure_ollama_ready
-from save_path import SAVE_DIR, RECORDS, migrate_clean_invalid_records, save_chat_summary
+from save_path import (SAVE_DIR, RECORDS, migrate_clean_invalid_records, save_chat_summary,
+                       save_parse_summary, save_word_summary, PARSE_SUMMARY_LOG, CHAT_SUMMARY_LOG, WORDS_SUMMARY_LOG)
 from check_update import check_and_update
 import sys
 import subprocess
 from review import (
-    review_patterns, call_cloud_with_fallback, 
-    DEEP_ASK_SYSTEM_PROMPT, SUMMARY_PROMPT, call_local_stream, 
-    SAVE_NOTE_SUMMARY_PROMPT, CASUAL_CHAT_SYSTEM_PROMPT
+    review_patterns, call_cloud_with_fallback, analyze_sentence_structure, review_parse_summaries, words_practice,
+    DEEP_ASK_SYSTEM_PROMPT, SUMMARY_PROMPT, call_local_stream, get_word_usage, review_words_summaries,
+    SAVE_NOTE_SUMMARY_PROMPT, CASUAL_CHAT_SYSTEM_PROMPT, SUMMARY_PARSE,
     )
 import webbrowser
 from urllib.parse import quote
@@ -229,12 +231,319 @@ def ask_why_fixed_thread(draft, revised):
     messages.append({'role': 'assistant', 'content': answer})
     return messages, answer
 
+def check_global_jump(user_input):
+    """如果是全局跳转命令，直接执行对应模式并返回 True；否则返回 False"""
+    cmd = user_input.lower()
+    if cmd == '/word':
+        word_usage_mode()
+        return True
+    elif cmd == '/parse':
+        parse_sentence_mode()
+        return True
+    elif cmd == '/chat':
+        chat_mode()
+        return True
+    return False
+
+def chat_mode():
+    slash_commands2 = SlashCommandCompleter(['/deep', '/local','/word', '/parse', '/doc','/back', '/help'])
+    session_log = []
+    used_cloud = False
+    use_cloud_mode = False
+
+    while True:
+        mode_hint = '[DEEP]' if use_cloud_mode else '[LOCAL]'
+        text_inquiry = prompt(f'*{mode_hint}* 你想聊什么？\n(/back ->返回 /help -> 查看其他命令):',
+                                completer=slash_commands2).strip()
+        if text_inquiry.lower() == '/back' or text_inquiry.lower() in ('/word', '/parse'):
+            if used_cloud and len(session_log) > 5:
+                summary = call_cloud_with_fallback(
+                    session_log + [{'role': 'user', 'content': SUMMARY_PROMPT}],
+                    stream_print=False
+                )
+                if summary is not None:
+                    save_chat_summary(summary)
+                    print(f'\n[本次对话已总结保存]\n{summary}\n'+ '-' * 20)
+                else:
+                    summary = call_local_stream(session_log + [{'role': 'user', 'content': SUMMARY_PROMPT}],
+                                                MODEL_NAME)
+                    save_chat_summary(summary)
+                    print(f'\n>本地模型<：[本次对话已总结保存]\n{summary}\n'+ '-' * 20)
+            if text_inquiry.lower() != '/back':
+                check_global_jump(text_inquiry)
+            break
+
+        elif text_inquiry.lower() == '/doc':
+            if CHAT_SUMMARY_LOG.exists():
+                content = CHAT_SUMMARY_LOG.read_text(encoding='utf-8')
+                print(content)
+                warning = prompt('是否打开文件夹查看(注意：*不要移动，编辑文件内容，否则可能造成不可逆损失*)\n y/n?:')
+                if warning.strip().lower() == 'y':
+                    if sys.platform == 'darwin':
+                        subprocess.Popen(['open', '-R', str(CHAT_SUMMARY_LOG)])
+                    elif sys.platform == 'win32':
+                        subprocess.Popen(['explorer', '/select,', str(CHAT_SUMMARY_LOG)])
+                    else:
+                        subprocess.Popen(['xdg-open', str(CHAT_SUMMARY_LOG)])
+
+            else:
+                print('无记录')
+            continue
+
+        elif text_inquiry.lower() == '/help':
+            print(f'''**本模块为英文知识随便问，问题结束后你可以保存从而形成学习档案**，
+            你可以输入:
+            
+                /doc ->查看自己存储的学习记录
+                /word -> 跳转到单词解析模块
+                /parse -> 跳转到长难句型模块
+                ''')
+            continue
+        elif text_inquiry.lower() == '/deep':
+            if mode_hint == '[DEEP]':
+                print('请直接输入你的问题！')
+                continue
+            use_cloud_mode = True
+            print('已切换deep模式，请说出你的困惑')
+            continue
+        elif text_inquiry.lower().strip() == '/local':
+            if mode_hint == '[LOCAL]':
+                print('请直接输入你的问题！')
+                continue
+            use_cloud_mode = False
+            print('已切回快速模式，请说出你的问题')
+            continue
+
+        session_log.append({'role': 'user', 'content': text_inquiry})
+
+        if use_cloud_mode:
+            cloud_messages = [{"role": "system", "content": DEEP_ASK_SYSTEM_PROMPT}] + session_log
+            answer = call_cloud_with_fallback(cloud_messages, temperature=0.5)
+            if answer is None:
+                print('云端不可用，本次改用本地模型回答')
+                local_messages = [{"role": "system", "content": CASUAL_CHAT_SYSTEM_PROMPT}] + session_log
+                answer = call_local_stream(local_messages, MODEL_NAME)                
+            else:
+                used_cloud = True
+        else:
+            local_messages = [{"role": "system", "content": CASUAL_CHAT_SYSTEM_PROMPT}] + session_log
+            answer = call_local_stream(local_messages, MODEL_NAME)
+        if answer is None:
+            answer = '（回答生成失败，云端和本地模型均不可用）'
+
+        session_log.append({'role': 'assistant', 'content': answer})
+
+def word_usage_mode():
+    slash_commands = SlashCommandCompleter(['/parse','/chat', '/doc','/practice', '/review', '/lookup','/help'])
+
+    session_log = []
+    first_round = True
+    auto_lookup = None
+    current_word = None
+    while True:
+        if auto_lookup is not None:
+            word_input = auto_lookup
+            auto_lookup = None
+            current_word = word_input
+        else:
+            if first_round:
+                word_input = prompt('请输入想学习的单词\n(/back ->返回；/help ->命令查询)====>：', 
+                                    completer=slash_commands).strip()
+            else:
+                word_input = prompt('是否有其他疑问？\n(/save ->保存并查询新单词; /back->返回；/help ->命令查询) ===>: ',
+                                    completer=slash_commands).strip()
+
+        if word_input.lower() == '/back' or word_input.lower() in ('/parse', '/chat'):
+            if session_log:
+                usage = review_words_summaries(current_word, session_log, MODEL_NAME)
+                save_word_summary(current_word, usage)
+                print('-' * 10 + f'{word_input}已保存' + '-' * 10)
+
+            if word_input.lower() != '/back':
+                check_global_jump(word_input)
+            break
+        elif word_input.lower() == '/save':
+            if session_log:
+                usage = review_words_summaries(current_word, session_log, MODEL_NAME)
+                save_word_summary(current_word, usage)
+                print('-' * 10 + f'{word_input}已保存' + '-' * 10)
+            session_log.clear()
+            first_round = True
+            continue
+        elif word_input.lower() == '/help':
+            print(f'''**本模块会自动保存你的学习记录，当累计一段时间后后，可以复习自己的学习轨迹**，
+            你可以输入:
+                           
+                /doc ->查看自己存储的单词表,精确查找则输入/doc 你要查的单词
+                /lookup 单词 ->打开权威词典查单词
+                /practice ->练习单词 (需较长的存储记录),希望随机练习则输入/practice random
+                /parse -> 跳转到单词解析模块
+                /chat -> 跳转到闲聊英文模块
+                  
+                ''')
+            continue
+        elif word_input.lower().startswith('/practice'):
+            demand = word_input[len('/practice'):].strip()
+            if WORDS_SUMMARY_LOG.exists():
+                with open(WORDS_SUMMARY_LOG, 'r', encoding='utf-8') as f:
+                    word_file = json.load(f)
+                if word_file:
+                    words_practice(word_file, demand, MODEL_NAME)                    
+                else:
+                    print('尚无可练习项')
+                continue
+            else:
+                print('尚无可练习项')
+                continue
+
+        elif word_input.lower().startswith('/lookup '):
+            word = word_input[len('/lookup '):].strip()
+            print(open_cambridge(word))
+            continue
+        elif word_input.lower().startswith('/doc'):
+            if not WORDS_SUMMARY_LOG.exists():
+                print('尚未有已保存的单词记录')
+                continue
+            with open(WORDS_SUMMARY_LOG, 'r', encoding='utf-8') as f:
+                content = json.load(f)
+            if content:
+                demand_word = word_input[len('/doc '):].strip()
+                if demand_word:
+                    for item in content:
+                        if item['word'] == demand_word:
+                            print("=" * 40)
+                            print(f"📖 单词: {item['word']}")
+                            print(f"💡 用法: {item['usage']}")
+                            print(f"🕐 时间: {item['time']}")
+                            print("=" * 40)
+                            break
+                    else:
+                        ask_lookup = prompt(f'尚未收录{demand_word}, 是否查询？（y/n）:')
+                        if ask_lookup == 'y':
+                            if session_log:
+                                usage = review_words_summaries(current_word, session_log, MODEL_NAME)
+                                save_word_summary(current_word, usage)
+                                print('-' * 10 + f'{current_word}已保存' + '-' * 10)
+                            session_log.clear()
+                            auto_lookup = demand_word
+                        continue
+                else:
+                    last_five = content[-5:]
+                    print(json.dumps(last_five, ensure_ascii=False, indent=4))
+                    warning = prompt('是否打开文件夹查看(注意：*不要移动，编辑文件内容，否则可能造成不可逆损失*)\n ====>y/n?:')
+                    if warning.strip().lower() == 'y':
+                        if sys.platform == 'darwin':
+                            subprocess.Popen(['open', '-R', str(WORDS_SUMMARY_LOG)])
+                        elif sys.platform == 'win32':
+                            subprocess.Popen(['explorer', '/select,', str(WORDS_SUMMARY_LOG)])
+                        else:
+                            subprocess.Popen(['xdg-open', str(WORDS_SUMMARY_LOG)])
+            else:
+                print('无记录')
+            continue
+        if first_round:
+            current_word = word_input
+        session_log.append({'role': 'user', 'content': word_input})
+        answer = get_word_usage(session_log, MODEL_NAME)
+        session_log.append({'role': 'assistant', 'content': answer})
+        first_round = False
+
+
+def parse_sentence_mode():
+    slash_commands = SlashCommandCompleter(['/word','/chat', '/doc', '/review', '/lookup','/back','/help'])
+    session_log = []
+    first_round = True
+    while True:
+        if first_round:
+            first_round = False
+            sentence = prompt('请输入你想分析并学习的句子(/back->返回；/help ->查看其他命令)\n===>:',
+                              completer=slash_commands).strip()
+        else:
+            sentence = prompt('是否有其他疑问？(/back->返回；/help ->查看其他命令)\n ===>: ',
+                              completer=slash_commands).strip()
+
+        if sentence.lower() == '/back' or sentence.lower() in ('/word', '/chat'):
+            if session_log:
+                print('正在分析本次对话，并保持...')
+                session_log.append({'role': 'user', 'content': SUMMARY_PARSE})
+                summary = call_cloud_with_fallback(
+                    session_log, stream_print=False)
+                if summary is not None:
+                    save_parse_summary(summary)
+                else:
+                    summary = call_local_stream(session_log, MODEL_NAME)
+                    save_parse_summary(summary)
+                print('-' * 10 + '已保存本次完整记录'+ 10* '-')
+            if sentence.lower() != '/back':
+                check_global_jump(sentence)
+            break
+        elif sentence.lower() == '/help':
+            print(f'''**本模块会自动保存你的学习记录，当累计一段时间后后，可以复习自己的学习轨迹**，
+            你可以输入:
+                            
+                /doc ->查看自己存储的学习记录
+                /lookup 单词 ->打开权威词典查单词
+                /review ->分析最近N条的自己的语法习惯(需较长的存储记录),比如/review 10
+                /word -> 跳转到单词解析模块
+                /chat -> 跳转到闲聊英文模块
+                  
+                ''')
+            continue
+        elif sentence.lower().startswith('/lookup '):
+            word = sentence[len('/lookup '):].strip()
+            print(open_cambridge(word))
+            continue
+        elif sentence.lower().startswith('/review'):
+            if not PARSE_SUMMARY_LOG.exists():
+                print('暂无历史记录')
+                continue
+            content = PARSE_SUMMARY_LOG.read_text(encoding='utf-8')
+                # 按 "## " 时间戳把文件切成一条条记录
+            raw_entries = content.split('\n## ')
+            entries = ['## ' + e.strip() for e in raw_entries if e.strip()]
+            if not entries:
+                print('暂无历史记录')
+                continue
+
+            numbers = sentence[len('/review '):].strip()
+            if numbers.isdigit():
+                print(f'显示最近{numbers}条精细分析：')
+                result = review_parse_summaries(entries, MODEL_NAME, n=int(numbers))
+            elif numbers == 'all':
+                print(f'显示全部记录的分析结果：')
+                result = review_parse_summaries(entries, MODEL_NAME, n=len(entries))
+            else:
+                print('默认显示前10条:')
+                result = review_parse_summaries(entries, MODEL_NAME)
+            continue
+        
+        session_log.append({'role': 'user', 'content': sentence})
+        answer = analyze_sentence_structure(session_log, MODEL_NAME)
+        session_log.append({'role': 'assistant', 'content': answer})
+
+
+class SlashCommandCompleter(Completer):
+    def __init__(self, commands):
+        self.commands = commands
+
+    def get_completions(self, document, complete_event):
+        text = document.text_before_cursor
+        if not text.startswith('/'):
+            return  # 不是斜杠开头，不弹出任何补全
+        for cmd in self.commands:
+            if cmd.startswith(text):
+                yield Completion(cmd, start_position=-len(text))
+
+
+slash_commands1 = SlashCommandCompleter(['/parse', '/word', '/help', '/review', '/lookup', '/l', '/ll','/doc','/chat'])
+
 new = None
 new_c = None
 pro_audio_buffer = None
 
 while True:
-    p = prompt('输入英文(or type "/help" -> 查看其他口令)\n===>：').strip()
+    p = prompt('输入英文(or type "/help" -> 查看其他口令)\n===>：',
+               mouse_support=True, completer=slash_commands1).strip()
     
     if p == '/l':
         if new is not None:
@@ -252,7 +561,7 @@ while True:
                 sd.play(data, samplerate)
                 sd.wait()
             else:
-                buffer = synthesize_with_groq_tts(f'[professionally]+{new_c}')
+                buffer = synthesize_with_groq_tts(f'[professionally]{new_c}')
                 if buffer is not None:
                     pro_audio_buffer = buffer
                     print(f'repeating[pro]: {new_c}')
@@ -266,14 +575,20 @@ while True:
         else:
             print('还未有可复述内容')
         continue
+    elif check_global_jump(p):
+        continue
     elif p.lower() == '/help':
-        print('''**当看到输入英文(or type "/help" -> 查看其他口令）**，你可以输入:
-                /chat ->进入闲聊模式（内含 /deep 进入高端模型、/local 切回本地）
+        print(f'''**当看到输入英文(or type "/help" -> 查看其他口令）**，你可以输入:
+              
+                /parse -> 进入长难句的句子分析模式
+                /chat ->进入英语使用杂问模式
+                /word -> 进入单词解析模块
                 /l ->重新朗读刚才的输入句
                 /ll ->重新朗读刚才的修改句
                 /doc ->查看自己存储的学习记录
                 /lookup 单词 ->打开权威词典查单词
-                /review ->分析自己的语法习惯''')
+                /review ->分析自己的语法习惯(需较长学习记录，当前{len(texts_list)}条)
+              ''')
         continue
     elif p.lower() == '/doc':
         if RECORDS.exists():
@@ -300,60 +615,11 @@ while True:
         continue
 
     elif p.lower() == '/chat':
-        session_log = []
-        used_cloud = False
-        use_cloud_mode = False
-
-        while True:
-            mode_hint = '[DEEP]' if use_cloud_mode else '[LOCAL]'
-            text_inquiry = prompt(f'*{mode_hint}* 你想聊什么？\n(2->退出 /deep->解决难题 /local->快速提问):')
-            if text_inquiry == '2':
-                break
-
-            if text_inquiry.lower().strip() == '/deep':
-                if mode_hint == '[DEEP]':
-                    print('请直接输入你的问题！')
-                    continue
-                use_cloud_mode = True
-                print('已切换deep模式，请说出你的困惑')
-                continue
-            elif text_inquiry.lower().strip() == '/local':
-                if mode_hint == '[LOCAL]':
-                    print('请直接输入你的问题！')
-                    continue
-                use_cloud_mode = False
-                print('已切回快速模式，请说出你的问题')
-                continue
-
-            session_log.append({'role': 'user', 'content': text_inquiry})
- 
-            if use_cloud_mode:
-                cloud_messages = [{"role": "system", "content": DEEP_ASK_SYSTEM_PROMPT}] + session_log
-                answer = call_cloud_with_fallback(cloud_messages, temperature=0.5)
-                if answer is None:
-                    print('云端不可用，本次改用本地模型回答')
-                    local_messages = [{"role": "system", "content": CASUAL_CHAT_SYSTEM_PROMPT}] + session_log
-                    answer = call_local_stream(local_messages, MODEL_NAME)                
-                else:
-                    used_cloud = True
-            else:
-                local_messages = [{"role": "system", "content": CASUAL_CHAT_SYSTEM_PROMPT}] + session_log
-                answer = call_local_stream(local_messages, MODEL_NAME)
-            if answer is None:
-                answer = '（回答生成失败，云端和本地模型均不可用）'
-
-            session_log.append({'role': 'assistant', 'content': answer})
-
-        if used_cloud and session_log:
-            summary = call_cloud_with_fallback(
-                session_log + [{'role': 'user', 'content': SUMMARY_PROMPT}],
-                stream_print=False
-            )
-            if summary:
-                save_chat_summary(summary)
-                print(f'\n[本次对话已总结保存]\n{summary}\n'+ '-' * 20)
+        chat_mode()
         continue
-
+    elif p.lower() == '/parse':
+        parse_sentence_mode()
+        continue
     else:
         new = p
 
@@ -364,10 +630,9 @@ while True:
     pro_audio_buffer = None
 
     saved_1 = False
-
     while True:
         ask_save = prompt(f'是否保存？\n1->yes/ 2-> no/ 3-> play again / 4-> why fix it: ').strip()
-        
+
         if ask_save == '1':
             if saved_1:
                 print('已经保存过了。')
@@ -376,7 +641,9 @@ while True:
             saved_1 = True
             print('-' * 10 + f'json已记录。总共{len(texts_list)}条' + '-' * 10)
             continue
-        elif ask_save == '2':
+        elif ask_save == '2' or ask_save.lower() in ('/chat', '/parse', '/word'):
+            if ask_save.lower() != '2':
+                check_global_jump(ask_save)
             break
         elif ask_save == '3':
             if pro_audio_buffer is not None:
@@ -386,7 +653,7 @@ while True:
                 sd.play(data, samplerate)
                 sd.wait()
             else:
-                buffer = synthesize_with_groq_tts(f'[professionally]+{new_c}')
+                buffer = synthesize_with_groq_tts(f'[professionally]{new_c}')
                 if buffer is not None:
                     pro_audio_buffer = buffer
                     print(f'repeating[pro]: {new_c}')
@@ -404,8 +671,8 @@ while True:
             saved = False
             last_saved_index = None
             while True:
-                keep_asking = prompt("\n还有什么不解?\n(或1 -> 保存本次分析/ 2 -> skip): ").strip()
-                if keep_asking == '2':
+                keep_asking = prompt("\n还有什么不解?\n(或1 -> 保存本次分析；/back -> 返回): ").strip()
+                if keep_asking.lower() == '/back':
                     break
                 elif keep_asking == '1':
                     if saved:

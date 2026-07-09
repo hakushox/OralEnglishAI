@@ -10,7 +10,7 @@ chmod +x SpeakNaturalLauncher.app/Contents/Resources/SpeakNatural/SpeakNatural
 确认：
 ls -la SpeakNaturalLauncher.app/Contents/Resources/
 
-
+git pull --rebase
 git add .
 git commit --amend --no-edit
 git push --force
