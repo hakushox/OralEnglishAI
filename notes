@@ -1,7 +1,11 @@
+打包
+
 pyinstaller --name SpeakNatural --icon=images/icon.icns --collect-all sounddevice edgetts.py 
+
 
 zip -r SpeakNatural-macos.zip SpeakNatural
 
+mac 存入.app
 rm SpeakNaturalLauncher.app/Contents/Resources/SpeakNatural
 rm -rf SpeakNaturalLauncher.app/Contents/Resources/SpeakNatural
 cp -R dist/SpeakNatural SpeakNaturalLauncher.app/Contents/Resources/
@@ -14,3 +18,12 @@ git pull --rebase
 git add .
 git commit --amend --no-edit
 git push --force
+
+git fetch
+git log --oneline origin/main -3
+
+git remote -v 远程仓库的名字和地址
+
+git branch -m master 改本地
+git push -u origin master 推送新的分支
+
