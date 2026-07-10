@@ -31,9 +31,9 @@ def get_latest_version():
         name_lower = asset['name'].lower()
         if 'launcher' in name_lower:
             continue
-        if '.zip' not in name_lower:
+        if any(name_lower.endswith(k) for k in ('.exe', '.app', '.dmg')):
             continue
-        if platform_tag in name_lower:
+        if platform_tag in name_lower and '.zip' in name_lower:
             download_url = asset['browser_download_url']
             break
 
