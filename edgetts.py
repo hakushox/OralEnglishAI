@@ -39,8 +39,12 @@ if getattr(sys, 'frozen', False):
     try:
         updated = check_and_update(app_dir)
         if updated:
-            print('更新完成，即将重启...')
-            os.execv(str(exe_path), [str(exe_path)])
+            if sys.platform == 'win32':
+                print('已启动更新程序，即将退出...')
+                sys.exit(0)   # Windows: 交给updater重启，自己只需退出
+            else:
+                print('更新完成，即将重启...')
+                os.execv(str(exe_path), [str(exe_path)])   # macOS: 保持原来的自己重启
     except Exception as e:
         print(f'更新失败，原因{e}\n直接使用当前版本')
 
@@ -525,9 +529,9 @@ def word_usage_mode():
             continue
         if first_round:
             tts(word_input)
-            current_word = word_input
             recorded_item = next((item for item in my_dictionary if item['word'] == current_word), None)
             if recorded_item:
+                current_word = word_input
                 session_log.append({'role': 'user', 'content': word_input})
                 print(f'查询你曾学过{current_word},以下是学习记录:')
                 answer = recorded_item['usage']
@@ -536,7 +540,12 @@ def word_usage_mode():
                 continue
         session_log.append({'role': 'user', 'content': word_input})
         answer = get_word_usage(session_log, MODEL_NAME)
+        if any(k in answer.strip() for k in ('need confirm','need_confirm','NEED_CONFIRM' )): 
+            session_log.clear()
+            continue
         session_log.append({'role': 'assistant', 'content': answer})
+        if first_round:
+            current_word = word_input
         first_round = False
         has_new_content = True
 
