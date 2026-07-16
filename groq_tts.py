@@ -40,8 +40,8 @@ def should_skip_tts(text: str) -> bool:
 
     return False
 
-
-def synthesize_with_groq_tts(text: str, voice: str = "autumn"):
+#autumn、diana、hannah、austin、daniel、troy
+def synthesize_with_groq_tts(text: str, voice: str = "diana"):
     """返回一个类文件对象（BytesIO），和 _speak() 的返回契约保持一致；失败返回 None"""
     if should_skip_tts(text):
         print("Groq TTS 额度可能不够，本次跳过")

@@ -529,21 +529,28 @@ def word_usage_mode():
             continue
         if first_round:
             tts(word_input)
-            recorded_item = next((item for item in my_dictionary if item['word'] == current_word), None)
+            recorded_item = next((item for item in my_dictionary if item['word'] == word_input), None)
             if recorded_item:
                 current_word = word_input
                 session_log.append({'role': 'user', 'content': word_input})
                 print(f'查询你曾学过{current_word},以下是学习记录:')
                 answer = recorded_item['usage']
+                print(answer)
                 session_log.append({'role': 'assistant', 'content': answer})
                 first_round = False
                 continue
-        session_log.append({'role': 'user', 'content': word_input})
-        answer = get_word_usage(session_log, MODEL_NAME)
-        if any(k in answer.strip() for k in ('need confirm','need_confirm','NEED_CONFIRM' )): 
-            session_log.clear()
-            continue
-        session_log.append({'role': 'assistant', 'content': answer})
+            session_log.append({'role': 'user', 'content': word_input})
+            answer = get_word_usage(session_log, MODEL_NAME,first_round=True)
+            if any(k in answer.strip() for k in ('need confirm','need_confirm','NEED_CONFIRM' )): 
+                session_log.clear()
+                first_round = True
+                continue
+            session_log.append({'role': 'assistant', 'content': answer})
+        else:
+            session_log.append({'role': 'user', 'content': word_input})
+            answer = get_word_usage(session_log, MODEL_NAME)
+            session_log.append({'role': 'assistant', 'content': answer})
+
         if first_round:
             current_word = word_input
         first_round = False
@@ -649,6 +656,7 @@ def parse_sentence_mode():
 
         elif sentence.lower() == '/r':
             if pro_audio_buffer is not None:
+                pro_audio_buffer.seek(0)
                 data, samplerate = sf.read(pro_audio_buffer)
                 sd.stop()
                 sd.play(data,samplerate)
@@ -712,7 +720,7 @@ new_c = None
 pro_audio_buffer = None
 
 while True:
-    p = prompt('\n>>>>>输入英文\n(/help -> 查看快捷指令)===>：',
+    p = prompt('\n>>>>>输入你尝试写的英文句子\n(/help -> 查看快捷指令)===>：',
                mouse_support=True, completer=slash_commands1).strip()
     
     if p == '/l':
@@ -853,10 +861,10 @@ while True:
             saved = False
             last_saved_index = None
             while True:
-                keep_asking = prompt("\n还有什么不解?\n(或1 -> 保存本次分析；/back -> 返回): ").strip()
+                keep_asking = prompt("\n还有什么不解?\n(或/save -> 保存本次分析；/back -> 返回): ").strip()
                 if keep_asking.lower() == '/back':
                     break
-                elif keep_asking == '1':
+                elif keep_asking == '/save':
                     if saved:
                         print('请勿重复保存！')
                         continue

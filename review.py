@@ -138,23 +138,21 @@ REVIEW_PARSE_SYSTEM_PROMPT = """你是一个英语学习分析助手，用户会
 """
 
 WORD_PARSE_SYSTEM_PROMPT = """你是一个专业的英语单词解析助手，帮助英语学习者深入掌握单词的用法。
-用户会给你一个英文单词，请按以下步骤分析：
+用户会给你英文单词或短语搭配词组，请按以下步骤分析：
 
-1. **单词**：给出单词的音标（英式/美式）和词性（如果有多个词性，都要列出），如常用于书面语，也标出。
+1. **单词**：给出单词的音标（英式/美式）和词性（如果有多个词性，都要列出），判断常用于书面语、口语或都可以。
 高级程度，用★表示。高级程度标准判定根据雅思或剑桥词典单词以及地道程度，评级最高★★★★★。评级跟单词罕见度和难度无关。
-2. **释义**：给出该单词的中文释义和英文释义，每个释义配一个英文例句。例句要体现单词在真实语境中的用法。
+**词组**： 不需要音标。判断常用于书面语、口语或都可以。高级程度，用★表示。高级程度标准判定根据雅思或剑桥词典单词以及地道程度，评级最高★★★★★。评级跟单词罕见度和难度无关
+2. **释义**：给出该单词/词组的中文释义和英文释义，每个释义配一个英文例句。例句要体现单词在真实语境中的用法。
 3. **常见搭配**：列出该单词最常见的搭配（介词搭配、固定短语、惯用组合等），用 → 连接说明用法。例如："depend on → 依赖；取决于"。
-4. **用法提示**：指出使用该单词时需要注意的地方（及物/不及物、正式/非正式、褒义/贬义、常见错误、特殊变形等）。用一句话说清楚即可。
+4. **用法提示**：指出使用该单词/词组时需要注意的地方（及物/不及物、正式/非正式、褒义/贬义、常见错误、特殊变形等）。用一句话说清楚即可。
 5. **词汇拓展**：与同义词的用法区别，帮助用户真正理解如何准确使用
 
 要求：
-- 单词释义要以Cambridge的为准。
+- 单词/词组释义要以Cambridge的为准。
 - 语言简洁，例句要真实自然
 - 不要长篇大论，每个板块控制在1-3行内
 - 不需要输出任何开场白或结束语，直接进入分析
-- 如果用户拼写有误、无法确定具体单词，请在回复的**第一行**单独输出 NEED_CONFIRM 这个词（不要加任何其他文字），
-  然后换行给出2-3个用户可能想问的单词，等待用户确认后再进行完整解析。
-  这种情况下不要输出任何单词的完整解析内容。
 """
 
 REVIEW_WORDS_SYSTEM_PROMPT = """你是一个专业的英语单词解析助手，用户会给你学习某个单词的笔记。
@@ -174,20 +172,26 @@ REVIEW_WORDS_SYSTEM_PROMPT = """你是一个专业的英语单词解析助手，
 QUESTION_GEN_SYSTEM_PROMPT = '''你是一个专业的英语老师，根据用户提供的单词和归纳的用法，出题帮助巩固记忆。
 
 要求：
+- 给出单词的英文解释，作为explanation，但不能显示该单词。 
 - 出2-3道题，包含填空题（1-2题）、中译英（1-2题）
 - 题目都以完整句子的形式呈现，不要给ABC选项，用户需要自己填写
 - 填空题：给出英文句子，挖空该单词或固定搭配，可结合介词使用，时态、单复数、主动被动，固定搭配等语法点
 - 中译英：给出含该词释义的中文句子，让用户翻译成英文
-- 每道题都要给出一个简洁的"参考答案要点"（answer_hint），用于后续判断用户回答是否正确，
-  不需要唯一固定答案，符合语法点/词形/搭配即可
+- 题目设置的目的，以及正确答案写进answer_hint里。
+  不需要唯一固定答案，符合语法点/词形/搭配即可  
+
+示例：
+**explanation**: *phrase*: to perform or speak without having prepared what you are going to do or say
+**type**: fill blank
+**question**: You can tell that he's just _______ and isn't very good at it, either.
 
 严格输出要求：
 - 只输出JSON，不要任何开场白、解释、Markdown代码块标记
 - 格式固定如下：
 
 {"questions": [
-  {"type": "fill_blank", "question": "...", "answer_hint": "..."},
-  {"type": "translation", "question": "...", "answer_hint": "..."}
+  {"type": "fill_blank", "explanation": "...", "question": "...", "answer_hint": "..."},
+  {"type": "translation",  "explanation": "...", "question": "...", "answer_hint": "..."}
 ]}
 '''
 
@@ -209,7 +213,7 @@ GRADE_ANSWER_SYSTEM_PROMPT = '''你是一个英语测验批改助手。
 - 只输出JSON，不要任何开场白、解释、Markdown代码块标记
 - 格式固定如下：
 
-{"result": "correct/close/wrong", "feedback": "字符串"}
+{"result": "correct/close/wrong", "feedback": "字符串", "correct_answer":"字符串"}
 '''
 
 PRACTICE_CONCLUSION_SYSTEM_PROMPT = '''你是一个专业的英语学习诊断分析师。
@@ -241,15 +245,16 @@ PRACTICE_CONCLUSION_SYSTEM_PROMPT = '''你是一个专业的英语学习诊断�
 
 # name 字段用来在下面路由逻辑里区分不同供应商的 header 命名规则
 PROVIDERS = [
-    {
+            {
+        'name': 'groq',
+        'client': OpenAI(api_key=GROQ_API_KEY, base_url='https://api.groq.com/openai/v1'),
+        'models': ['qwen/qwen3.6-27b','openai/gpt-oss-120b']
+    },
+
+        {
         'name': 'cerebras',
         'client': OpenAI(api_key=CEREBRAS_API_KEY, base_url='https://api.cerebras.ai/v1'),
         'models': ['gpt-oss-120b']
-    },
-    {
-        'name': 'groq',
-        'client': OpenAI(api_key=GROQ_API_KEY, base_url='https://api.groq.com/openai/v1'),
-        'models': ['openai/gpt-oss-120b', 'qwen/qwen3.6-27b']
     },
 ]
 
@@ -292,7 +297,10 @@ def switch_model():
     print(f'切换到：{PROVIDERS[CLIENT_INDEX]["client"].base_url} / {get_current_model()}')
     return True
 
-
+def get_reasoning_kwargs(model: str) -> dict:
+    if "qwen" in model:
+        return {"extra_body": {"reasoning_effort": "none"}}
+    return {}  # gpt-oss 系列不做任何调整，用默认 reasoning_effort（更好的输出质量）
 # ============ 额度感知路由相关 ============
 
 def estimate_tokens(messages) -> int:
@@ -351,7 +359,7 @@ def call_cloud_with_fallback(messages, stream_print=True, max_attempts=None, tem
 
     for attempt in range(max_attempts):
         name = get_current_provider()['name']
-
+        extra_kwargs = get_reasoning_kwargs(get_current_model())
         if should_skip(name, messages):
             print(f'[{name}] 额度可能不够，跳过')
             switch_model()
@@ -363,6 +371,7 @@ def call_cloud_with_fallback(messages, stream_print=True, max_attempts=None, tem
                 messages=messages,
                 temperature=temperature,
                 stream=True,
+                **extra_kwargs,
             )
 
             # 记录这次调用后的剩余额度，供下次调用前参考
@@ -388,7 +397,7 @@ def call_cloud_with_fallback(messages, stream_print=True, max_attempts=None, tem
             return full_content
 
         except Exception as e:
-            print(f'{get_current_model()} 失败: {str(e)[:30]}...')
+            print(f'{get_current_model()} 失败: {str(e)[:100]}...')
             switch_model()
     return None
 
@@ -465,8 +474,14 @@ def review_parse_summaries(md_log, model_name, n=10):
         result = call_local_stream(messages, model_name)
     return result
 
-def get_word_usage(context, model_name):
-    messages = [{'role': 'system', 'content': WORD_PARSE_SYSTEM_PROMPT}] + context
+def get_word_usage(context, model_name, first_round=False):
+    system_prompt = {'role': 'system', 'content': WORD_PARSE_SYSTEM_PROMPT}
+    if first_round:
+         system_prompt['content'] += '''\n- 如果用户单词拼写有误或无法构成正确固定搭配短语时，请在回复的**第一行**单独输出 NEED_CONFIRM 这个词（不要加任何其他文字），
+  然后换行给出2-3个用户可能想问的单词或短语，等待用户确认后再进行完整解析。
+  这种情况下不要输出任何单词的完整解析内容。'''
+         
+    messages = [system_prompt] + context
 
     print('-'*50+ '\n')
     result = call_cloud_with_fallback(messages, stream_print=True)
@@ -488,7 +503,11 @@ def review_words_summaries(word, context, model_name):
 
 def words_practice(file, demand, model_name):
     if demand:
-        if not demand.isdigit():
+        if demand == 'random':
+            numbers = max(1, len(file) // 3)
+            word_item =[t for t in random.sample(file,numbers) if isinstance(t,dict) and t.get('word') is not None] 
+            chosen_items = word_item
+        elif not demand.isdigit():
             word_item = [t for t in file if isinstance(t, dict) and t.get('word') == demand]
             if not word_item:
                 print('暂无历史记录')
@@ -511,6 +530,9 @@ def words_practice(file, demand, model_name):
             print('暂无历史记录')
             return
         chosen_items = [file[-1]]
+        
+    print(f'本次供选择了{len(chosen_items)}个单词来测试，共{3 * len(chosen_items)}道题\n\
+（/practice+random ->随机数量抽题；+数字 ->指定数量抽题；+单词 ->指定训练特定单词; 直接/practice ->仅测试最近学习的一个单词）')
 
     for item in chosen_items:
         word, usage = item['word'], item['usage']
@@ -582,7 +604,7 @@ def run_practice_session(word, usage, model_name):
     transcript = []
 
     for i, q in enumerate(questions):
-        print(f'\n第{i+1}/{len(questions)}题：{q["question"]}')
+        print(f'\n第{i+1}/{len(questions)}题：\n英文解释：{q['explanation']}\n类型：{q['type']}\n题目：{q["question"]}')
         wrong_count = 0
 
         while True:
@@ -604,7 +626,7 @@ def run_practice_session(word, usage, model_name):
             })
 
             if grade['result'] == 'correct':
-                print(f'✅ 正确！{grade["feedback"]}')
+                print(f'✅ 正确！答案为：{grade["correct_answer"]}。{grade["feedback"]}')
                 break
             elif grade['result'] == 'close':
                 print(f'⚠️ 接近正确：{grade["feedback"]}')

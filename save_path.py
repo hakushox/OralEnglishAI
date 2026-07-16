@@ -3,6 +3,7 @@ import sys
 import json
 import datetime
 from pathlib import Path
+from prompt_toolkit import prompt
 
 def get_save_dir():
     if sys.platform == "win32":
@@ -83,7 +84,41 @@ def save_word_summary(word, usage):
             datas = json.load(f)
     else:
         datas = []
-                
+
+    # latest = {}
+    # for item in datas:
+    #     sample = item['word']
+    #     if sample not in latest or item['time'] > latest[sample]['time']:
+    #         latest[sample] = item 
+    # renewed = list(latest.values())
+
+    if word in (keyword['word'] for keyword in datas if datas):
+        confirm = prompt(f'发现{word}已有记录,是否先查看\n(y ->查看；n ->直接覆盖) ===>：').strip()
+        if confirm.lower() == 'y':
+            for item in datas:
+                if item['word'] == word:
+                    print(item)
+            reconfirm = prompt('是否覆盖？(y/n): ').strip()
+            if reconfirm.lower() == 'y':
+                timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+                for item in datas:
+                    if item['word'] == word:
+                        item['usage'] = usage
+                        item['time'] = timestamp
+                        WORDS_SUMMARY_LOG.write_text(json.dumps(datas,ensure_ascii=False,
+                                                                indent=4),encoding='utf-8')
+                        return
+        else:
+            timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+            for item in datas:
+                if item['word'] == word:
+                    item['usage'] = usage
+                    item['time'] = timestamp
+                    WORDS_SUMMARY_LOG.write_text(json.dumps(datas,ensure_ascii=False,
+                                                            indent=4),encoding='utf-8')
+                    print(f'已覆盖关于{word}的旧纪录')   
+                    return
+         
     timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
     data = {'word': word, 'usage': usage, 'time': timestamp}
     datas.append(data)
