@@ -604,7 +604,7 @@ def run_practice_session(word, usage, model_name):
     transcript = []
 
     for i, q in enumerate(questions):
-        print(f'\n第{i+1}/{len(questions)}题：\n英文解释：{q['explanation']}\n类型：{q['type']}\n题目：{q["question"]}')
+        print(f'\n第{i+1}/{len(questions)}题：\n英文解释：{q["explanation"]}\n类型：{q["type"]}\n题目：{q["question"]}')
         wrong_count = 0
 
         while True:

@@ -6,6 +6,9 @@ from prompt_toolkit.completion import Completer, Completion
 import asyncio
 import io
 import soundfile as sf
+import sys
+import os
+
 
 import ollama
 import time
@@ -15,21 +18,6 @@ from ollama_setup import ensure_ollama_ready
 from save_path import (SAVE_DIR, RECORDS, migrate_clean_invalid_records, save_chat_summary,
                        save_parse_summary, save_word_summary, PARSE_SUMMARY_LOG, CHAT_SUMMARY_LOG, WORDS_SUMMARY_LOG)
 from check_update import check_and_update
-import sys
-import subprocess
-from review import (
-    review_patterns, call_cloud_with_fallback, analyze_sentence_structure, review_parse_summaries, words_practice,
-    DEEP_ASK_SYSTEM_PROMPT, SUMMARY_PROMPT, call_local_stream, get_word_usage, review_words_summaries,
-    SAVE_NOTE_SUMMARY_PROMPT, CASUAL_CHAT_SYSTEM_PROMPT, SUMMARY_PARSE,
-    )
-import webbrowser
-from urllib.parse import quote
-import os
-import random
-import hashlib
-
-from groq_tts import synthesize_with_groq_tts
-
 
 print('正在启动SpeakNatural, 检查更新...')
 
@@ -47,6 +35,22 @@ if getattr(sys, 'frozen', False):
                 os.execv(str(exe_path), [str(exe_path)])   # macOS: 保持原来的自己重启
     except Exception as e:
         print(f'更新失败，原因{e}\n直接使用当前版本')
+        
+
+import subprocess
+from review import (
+    review_patterns, call_cloud_with_fallback, analyze_sentence_structure, review_parse_summaries, words_practice,
+    DEEP_ASK_SYSTEM_PROMPT, SUMMARY_PROMPT, call_local_stream, get_word_usage, review_words_summaries,
+    SAVE_NOTE_SUMMARY_PROMPT, CASUAL_CHAT_SYSTEM_PROMPT, SUMMARY_PARSE,
+    )
+import webbrowser
+from urllib.parse import quote
+import random
+import hashlib
+
+from groq_tts import synthesize_with_groq_tts
+
+
 
 MODEL_NAME = ensure_ollama_ready()
 time.sleep(1.5) 
