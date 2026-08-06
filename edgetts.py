@@ -47,8 +47,11 @@ import webbrowser
 from urllib.parse import quote
 import random
 import hashlib
+from groq_tts import synthesize_with_groq_tts, listen
+from pynput import keyboard
+from faster_whisper import WhisperModel
 
-from groq_tts import synthesize_with_groq_tts
+
 
 
 
@@ -719,12 +722,37 @@ class SlashCommandCompleter(Completer):
 
 slash_commands1 = SlashCommandCompleter(['/parse', '/word', '/help', '/review', '/lookup', '/l', '/ll','/doc','/chat'])
 
+def edit_text(text):
+    result = prompt('指令(可修改，按enter确认)：', default=text).strip()
+    return result
+
+stop_event = threading.Event()
+stop_event.clear()
+waiting_input = threading.Event()
+waiting_input.clear()
+
+
+def on_press(key):
+    pass
+
+def on_release(key):
+    if key == keyboard.Key.esc and not stop_event.is_set():
+        stop_event.set()
+
+    if key == keyboard.Key.tab:
+        if not waiting_input.is_set():
+            waiting_input.set() 
+            # sd.stop()
+
+print('正在加载Whisper model...')
+model = WhisperModel('large-v3-turbo', device='cuda', compute_type='float16')
+
 new = None
 new_c = None
 pro_audio_buffer = None
 
 while True:
-    p = prompt('\n>>>>>输入你尝试写的英文句子\n(/help -> 查看快捷指令)===>：',
+    p = prompt('\n>>>>>输入你尝试写的英文句子\n(/help -> 查看快捷指令;无输入按回车，进入语音输入)===>：',
                mouse_support=True, completer=slash_commands1).strip()
     
     if p == '/l':
@@ -757,11 +785,27 @@ while True:
         else:
             print('还未有可复述内容')
         continue
+    elif p == '':
+        listener = keyboard.Listener(on_press=on_press, on_release=on_release)
+        listener.start()
+
+        print('>按esc结束录音/按tab切换到手动模式<')
+        # 每次录音前，重置状态
+        stop_event.clear()
+        waiting_input.clear()
+
+        raw_texts = listen(model,stop_event, waiting_input)
+        listener.stop()
+        if raw_texts:  # 只有当确实录到了东西，才进入编辑模式
+            new = edit_text(raw_texts)
+        else:
+            continue
+
     elif check_global_jump(p):
         continue
     elif p.lower() == '/help':
         print(f'''**当看到输入英文(or type "/help" -> 查看其他口令）**，你可以输入:
-              
+                无输入按回车，进入语音输入
                 /parse -> 进入长难句的句子分析模式
                 /chat ->进入英语使用杂问模式
                 /word -> 进入单词解析模块
@@ -825,9 +869,9 @@ while True:
 
     saved_1 = False
     while True:
-        ask_save = prompt(f'是否保存？\n1->yes/ 2-> no/ 3-> play again / 4-> why fix it: ').strip()
+        ask_save = prompt(f'是否保存？\n输入y-> yes； n-> no； 3-> play again ； 4-> why fix it: ').strip()
 
-        if ask_save == '1':
+        if ask_save.lower() == 'y':
             if saved_1:
                 print('已经保存过了。')
                 continue
@@ -835,7 +879,7 @@ while True:
             saved_1 = True
             print('-' * 10 + f'json已记录。总共{len(texts_list)}条' + '-' * 10)
             continue
-        elif ask_save == '2' or ask_save.lower() in ('/chat', '/parse', '/word'):
+        elif ask_save.lower() == 'n' or ask_save.lower() in ('/chat', '/parse', '/word'):
             if ask_save.lower() != '2':
                 check_global_jump(ask_save)
             break

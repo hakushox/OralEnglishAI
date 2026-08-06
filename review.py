@@ -135,6 +135,7 @@ REVIEW_PARSE_SYSTEM_PROMPT = """你是一个英语学习分析助手，用户会
 - 如果样本数量太少、看不出明显规律，直接说明，不要牵强总结
 - 给出1-2条具体、可执行的改进建议（比如"多留意由which引导的非限制性定语从句"）
 - 使用中文回答，语法术语保留英文原词
+- 200字以内
 """
 
 WORD_PARSE_SYSTEM_PROMPT = """你是一个专业的英语单词解析助手，帮助英语学习者深入掌握单词的用法。
@@ -166,7 +167,7 @@ REVIEW_WORDS_SYSTEM_PROMPT = """你是一个专业的英语单词解析助手，
 - 找出实质的讨论内容与成果
 - 以最初讨论的单词为准，中间也许用户会引出其他单词的疑问，如果能融入到总结中则总结，不能则忽略。
 - 不需要输出任何开场白或结束语，直接进入分析
-- 100字以内
+- 150字以内
 """
 
 QUESTION_GEN_SYSTEM_PROMPT = '''你是一个专业的英语老师，根据用户提供的单词和归纳的用法，出题帮助巩固记忆。
@@ -245,17 +246,17 @@ PRACTICE_CONCLUSION_SYSTEM_PROMPT = '''你是一个专业的英语学习诊断�
 
 # name 字段用来在下面路由逻辑里区分不同供应商的 header 命名规则
 PROVIDERS = [
+        {
+        'name': 'cerebras',
+        'client': OpenAI(api_key=CEREBRAS_API_KEY, base_url='https://api.cerebras.ai/v1'),
+        'models': ['gpt-oss-120b']
+    },
             {
         'name': 'groq',
         'client': OpenAI(api_key=GROQ_API_KEY, base_url='https://api.groq.com/openai/v1'),
         'models': ['qwen/qwen3.6-27b','openai/gpt-oss-120b']
     },
 
-        {
-        'name': 'cerebras',
-        'client': OpenAI(api_key=CEREBRAS_API_KEY, base_url='https://api.cerebras.ai/v1'),
-        'models': ['gpt-oss-120b']
-    },
 ]
 
 CLIENT_INDEX = 0

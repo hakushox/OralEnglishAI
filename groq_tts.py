@@ -12,6 +12,12 @@ Groq TTS（Orpheus）独立模块。
 from review import get_provider_by_name  # 复用 review.py 里已建好的 client 查找方式
 import io
 
+import time
+import threading
+import numpy as np
+import sounddevice as sd
+
+
 
 # TTS 专用的额度记录，字段名已通过实测确认，和 chat completion 那边完全一致
 tts_status = {'tokens': None, 'requests': None}
@@ -41,7 +47,7 @@ def should_skip_tts(text: str) -> bool:
     return False
 
 #autumn、diana、hannah、austin、daniel、troy
-def synthesize_with_groq_tts(text: str, voice: str = "diana"):
+def synthesize_with_groq_tts(text: str, voice: str = "troy"):
     """返回一个类文件对象（BytesIO），和 _speak() 的返回契约保持一致；失败返回 None"""
     if should_skip_tts(text):
         print("Groq TTS 额度可能不够，本次跳过")
@@ -63,3 +69,76 @@ def synthesize_with_groq_tts(text: str, voice: str = "diana"):
     except Exception as e:
         print(f"Groq TTS 生成失败: {e}")
         return None
+    
+
+
+
+def listen(model, stop_event:'keyboardlistener', waiting_input: 'threadingevent'):
+    # while not stop_event.is_set():
+    #     time.sleep(0.05)
+
+    frames =[]
+    display_text = ['']
+
+    def transcribe_loop():
+        start = time.time()
+        while not stop_event.is_set() and not waiting_input.is_set():
+            time.sleep(0.1)
+            if not frames:
+                continue
+            
+            audio = np.concatenate(frames).squeeze()
+            segments, _ = model.transcribe(audio, language='zh', vad_filter=True,
+                initial_prompt='E盘, 海豹, 网易云，百度, gmail, 桌面...')
+            text = ''.join(seg.text for seg in segments)
+            display_text[0] = text
+            
+            elapsed = time.time() - start
+            print(f'\rRecording...{elapsed:.1f}秒。识别中：{text}', end='', flush=True)
+
+            # 3. 内部语音触发停止：直接设置外部的 stop_event
+            for keyword in ['发送', '完成']:
+                pos = text.rfind(keyword)
+                if pos != -1 and len(text) - pos <= 5:
+                    stop_event.set()  # 核心：内部和外部共用同一个停止开关
+                    break
+
+    def callback(indata, frame_count, time_info, status):
+        frames.append(indata.copy())
+    
+    # 启动后台识别线程
+    t = threading.Thread(target=transcribe_loop, daemon=True)
+    t.start()
+
+    # 4. 主线程持续录音，只要 stop_event 没被设置，就一直录
+    with sd.InputStream(samplerate=16000, channels=1, dtype='float32', callback=callback):
+        print("test开始录音...")
+        while not stop_event.is_set() and not waiting_input.is_set():
+            time.sleep(0.05)
+
+    # 5. 录音结束，通知子线程退出
+    t.join(timeout=2)
+    print()
+    
+    if not frames:
+        return ''
+    if waiting_input.is_set():
+        print('正在切换为手动输入模式...')
+        return ''
+    
+    # 6. 最终全量识别
+    audio = np.concatenate(frames).squeeze()
+    segments, _ = model.transcribe(audio, language='zh', vad_filter=True,
+        initial_prompt='E盘, 海豹, 网易云，百度, baidu, gmail, 桌面...')
+    text = ''.join(seg.text for seg in segments)
+
+    # 7. 去掉结尾的停止关键词
+    for keyword in ['发送', '完成']:
+        pos = text.rfind(keyword)
+        if pos != -1 and len(text) - pos <= 5:
+            text = text[:pos].strip()
+            break
+
+    print(f'\n最终识别：{text}')
+    return text
+

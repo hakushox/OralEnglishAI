@@ -1,7 +1,7 @@
 打包
 
 pyinstaller --name SpeakNatural --icon=images/icon.icns --collect-all sounddevice edgetts.py 
-
+pyinstaller --name SpeakNatural --icon=images/icon.ico --collect-all faster_whisper --collect-all sounddevice edgetts.py 
 
 zip -r SpeakNatural-macos.zip SpeakNatural
 
