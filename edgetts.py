@@ -19,6 +19,11 @@ from save_path import (SAVE_DIR, RECORDS, migrate_clean_invalid_records, save_ch
                        save_parse_summary, save_word_summary, PARSE_SUMMARY_LOG, CHAT_SUMMARY_LOG, WORDS_SUMMARY_LOG)
 from check_update import check_and_update
 
+from rich.console import Console
+from rich.markdown import Markdown
+
+console = Console()
+
 print('正在启动SpeakNatural, 检查更新...')
 
 if getattr(sys, 'frozen', False):
@@ -341,7 +346,12 @@ def chat_mode():
         elif text_inquiry.lower() == '/doc':
             if CHAT_SUMMARY_LOG.exists():
                 content = CHAT_SUMMARY_LOG.read_text(encoding='utf-8')
-                print(content)
+                entries = [e for e in content.split('\n## ') if e.strip()]
+                show_count = min(5, len(entries))
+                for item in entries[-5:]:
+                    console.print(Markdown(item))
+                    console.rule()
+                console.rule(f'以上为最新{show_count}记录，可手动查看更多')
                 warning = prompt('是否打开文件夹查看(注意：*不要移动，编辑文件内容，否则可能造成不可逆损失*)\n ===>(y/n?):')
                 if warning.strip().lower() == 'y':
                     if sys.platform == 'darwin':
@@ -502,11 +512,10 @@ def word_usage_mode():
                 if demand_word:
                     for item in content:
                         if item['word'] == demand_word:
-                            print("=" * 40)
-                            print(f"📖 单词: {item['word']}")
-                            print(f"💡 用法: {item['usage']}")
-                            print(f"🕐 时间: {item['time']}")
-                            print("=" * 40)
+                            console.rule()
+                            console.print(f"📖 单词: [underline bold italic]{item['word']}[/] [dim] {item['time']}[/dim]")
+                            console.print(Markdown(f"💡 用法: {item['usage']}"))
+                            console.rule()
                             break
                     else:
                         ask_lookup = prompt(f'尚未收录{demand_word}, 是否查询？（y/n）:')
@@ -514,7 +523,7 @@ def word_usage_mode():
                             if has_new_content:
                                 usage = review_words_summaries(current_word, session_log, MODEL_NAME)
                                 save_word_summary(current_word, usage)
-                                print('-' * 10 + f'{current_word}已保存' + '-' * 10)
+                                console.rule(f'{current_word}已保存')
                             session_log.clear()
                             has_new_content = False
                             first_round = True 
@@ -522,7 +531,12 @@ def word_usage_mode():
                         continue
                 else:
                     last_five = content[-5:]
-                    print(json.dumps(last_five, ensure_ascii=False, indent=4))
+                    for item in last_five:
+                        console.rule()
+                        console.print(f"📖 单词: [underline bold italic]{item['word']}[/]",
+                                       f"[dim]{item['time']}[/dim]")
+                        console.print(Markdown(f"💡 用法: {item['usage']}"))
+                    console.rule()
                     warning = prompt('是否打开文件夹查看(注意：*不要移动，编辑文件内容，否则可能造成不可逆损失*)\n ====>y/n?:')
                     if warning.strip().lower() == 'y':
                         if sys.platform == 'darwin':
@@ -542,7 +556,7 @@ def word_usage_mode():
                 session_log.append({'role': 'user', 'content': word_input})
                 print(f'查询你曾学过{current_word},以下是学习记录:')
                 answer = recorded_item['usage']
-                print(answer)
+                console.print(Markdown(answer))
                 session_log.append({'role': 'assistant', 'content': answer})
                 first_round = False
                 continue
@@ -640,12 +654,14 @@ def parse_sentence_mode():
                     entries = [e for e in content.split('\n## ') if e.strip()]
                     latest = entries[-n:]
                     for e in latest:
-                        print(f'##{e}')                   
+                        console.print(Markdown(f'## {e}'))    
+                        console.rule(style="dim")              
                 elif not record_number:
                     entries = [e for e in content.split('\n## ') if e.strip()]
                     latest = entries[-1:]
                     for e in latest:
-                        print(f'##{e}')                   
+                        console.print(Markdown(f'记录时间： {e}'))     
+                        console.rule(f'显示最近1条记录，如需显示更多请输入/doc 数字', style="dim")              
                 else:
                     print('非法输入')
                     continue
@@ -820,18 +836,17 @@ while True:
         if RECORDS.exists():
             content = json.loads(RECORDS.read_text(encoding='utf-8'))
             n = 1
-            print('-' * 10 + f'记录第{n}条' + '-' * 10)
             for item in content[-3:]:
+                console.rule(f'记录第{n}条')
                 print()
                 print(f"原输入：{item['draft']}")
                 print(f"修正后：{item['revised']}")
                 n += 1
                 if item.get('notes'):
                     for note in item['notes']:
-                        print(note)
+                        console.print(Markdown(note))
                 print()
-                print('-' * 10 + f'记录第{n}条' + '-' * 10)
-            print('-' *10 +'以上为最近的三条记录' + '-' *10)
+            console.rule('以上为最近的三条记录')
             warning = prompt('是否打开文件夹查看(注意：*不要移动，编辑文件内容，否则可能造成不可逆损失*)\n===> (y/n?):')
             if warning.strip().lower() == 'y':
                 if sys.platform == 'darwin':

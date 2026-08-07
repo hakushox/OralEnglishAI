@@ -7,6 +7,12 @@ import time
 import json
 import re
 from save_path import update_word_proficiency
+from rich.console import Console
+from rich.markdown import Markdown
+
+console = Console()
+
+
 REVIEW_SYSTEM_PROMPT = '''你是一个专业的英语表达习惯分析师。任务：分析用户提供的一组原始造句（draft），
 找出反复出现的结构单一的表达习惯问题，并给出具体的改进建议，帮助用户以后主动避免这些习惯。
 
@@ -356,7 +362,7 @@ def call_cloud_with_fallback(messages, stream_print=True, max_attempts=None, tem
     """
     total_models = sum(len(p['models']) for p in PROVIDERS)
     if max_attempts is None:
-        max_attempts = total_models  # 默认把所有 provider/model 组合都试一遍，别提前放弃
+        max_attempts = total_models
 
     for attempt in range(max_attempts):
         name = get_current_provider()['name']
@@ -375,26 +381,33 @@ def call_cloud_with_fallback(messages, stream_print=True, max_attempts=None, tem
                 **extra_kwargs,
             )
 
-            # 记录这次调用后的剩余额度，供下次调用前参考
             remaining = extract_remaining(name, raw_response.headers)
             provider_status[name] = remaining
 
-            stream = raw_response.parse()  # 拿到真正可迭代的流对象
+            stream = raw_response.parse()
+
+            full_content = ''
+            if stream_print:
+                # 流式阶段只用一个 spinner 表示"正在生成"，不再逐字打印原始 markdown
+                with console.status(
+                    f"[bold cyan]{get_current_provider()['name']} -> {get_current_model()} 分析中...",
+                    spinner="dots",
+                ):
+                    for chunk in stream:
+                        delta = chunk.choices[0].delta.content
+                        if delta:
+                            full_content += delta
+            else:
+                for chunk in stream:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        full_content += delta
 
             if stream_print:
-                print(f"模型{get_current_provider()['name']} -> {get_current_model()}分析结果：")
-                print()
-                print('-'*50 + '\n')
-            full_content = ''
-            for chunk in stream:
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    full_content += delta
-                    if stream_print:
-                        print(delta, end='', flush=True)
-            if stream_print:
-                print()
-                print('-'*50 + '\n')
+                console.rule(f"[bold]{get_current_provider()['name']} -> {get_current_model()} 分析结果")
+                console.print(Markdown(full_content))
+                console.rule()
+
             return full_content
 
         except Exception as e:
@@ -412,14 +425,16 @@ def call_local_stream(messages, model_name, temperature=0.2):
             options={'temperature': temperature},
             stream=True,
         )
-        print('-'*50 + '\n')
         full_content = ''
-        for chunk in local_stream:
-            content = chunk['message']['content']
-            full_content += content
-            print(content, end='', flush=True)
-        print('-'*50 + '\n')
+        with console.status(f"[bold cyan]{model_name} 分析中...", spinner="dots"):
+            for chunk in local_stream:
+                full_content += chunk['message']['content']
+
+        console.rule(f"[bold]{model_name} 分析结果")
+        console.print(Markdown(full_content))
+        console.rule()
         return full_content
+
     except Exception as e2:
         print(f'本地分析也失败了: {e2}')
         return None
