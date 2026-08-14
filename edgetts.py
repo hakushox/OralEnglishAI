@@ -1,3 +1,6 @@
+import multiprocessing
+multiprocessing.freeze_support()
+
 import edge_tts
 import sounddevice as sd
 import threading
@@ -8,7 +11,8 @@ import io
 import soundfile as sf
 import sys
 import os
-
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 import ollama
 import time
@@ -37,7 +41,10 @@ if getattr(sys, 'frozen', False):
                 sys.exit(0)   # Windows: 交给updater重启，自己只需退出
             else:
                 print('更新完成，即将重启...')
-                os.execv(str(exe_path), [str(exe_path)])   # macOS: 保持原来的自己重启
+                subprocess.Popen([str(exe_path)])
+                sys.exit(0)
+                # print('更新完成，即将重启...')
+                # os.execv(str(exe_path), [str(exe_path)])   # macOS: 保持原来的自己重启
     except Exception as e:
         print(f'更新失败，原因{e}\n直接使用当前版本')
         
@@ -761,7 +768,11 @@ def on_release(key):
             # sd.stop()
 
 print('正在加载Whisper model...')
-model = WhisperModel('large-v3-turbo', device='cuda', compute_type='float16')
+if sys.platform == 'win32':
+    model = WhisperModel('large-v3-turbo', device='cuda', compute_type='float16')
+
+else:
+    model = WhisperModel('large-v3-turbo', device='cpu', compute_type='int8', cpu_threads=6)
 
 new = None
 new_c = None
