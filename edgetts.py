@@ -1,6 +1,6 @@
 import multiprocessing
 multiprocessing.freeze_support()
-
+import subprocess
 import edge_tts
 import sounddevice as sd
 import threading
@@ -48,8 +48,6 @@ if getattr(sys, 'frozen', False):
     except Exception as e:
         print(f'更新失败，原因{e}\n直接使用当前版本')
         
-
-import subprocess
 from review import (
     review_patterns, call_cloud_with_fallback, analyze_sentence_structure, review_parse_summaries, words_practice,
     DEEP_ASK_SYSTEM_PROMPT, SUMMARY_PROMPT, call_local_stream, get_word_usage, review_words_summaries,

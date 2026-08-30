@@ -71,12 +71,29 @@ def check_and_update(app_dir):
     else:
         print('正在解压...')
         temp_extract_dir = app_dir.parent / 'update_temp'
+        if temp_extract_dir.exists():
+            shutil.rmtree(temp_extract_dir)
+
         with zipfile.ZipFile(zip_path, 'r') as zf:
             zf.extractall(temp_extract_dir)
 
-        shutil.rmtree(app_dir)
         new_app_dir = temp_extract_dir / 'SpeakNatural'
-        new_app_dir.replace(app_dir)
+        if not new_app_dir.exists():
+            raise RuntimeError(f'解压结果异常，未找到 {new_app_dir}，更新已中止，未影响当前版本')
+
+        # 校验通过后，再做替换：先把旧版本挪到备份位，再放新版本，最后清理备份
+        backup_dir = app_dir.parent / 'SpeakNatural_backup'
+        if backup_dir.exists():
+            shutil.rmtree(backup_dir)
+
+        app_dir.replace(backup_dir)      # 旧版本改名（几乎瞬间完成，不是删除）
+        try:
+            new_app_dir.replace(app_dir) # 新版本就位
+        except Exception:
+            backup_dir.replace(app_dir)  # 失败就把旧版本挪回来
+            raise
+        else:
+            shutil.rmtree(backup_dir, ignore_errors=True)  # 确认成功后再删旧版本
 
         zip_path.unlink()
         shutil.rmtree(temp_extract_dir, ignore_errors=True)

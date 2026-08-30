@@ -1,5 +1,5 @@
 from openai import OpenAI
-from API_KEY import CEREBRAS_API_KEY, GROQ_API_KEY
+from API_KEY import CEREBRAS_API_KEY, GROQ_API_KEY,CLOUDFLARE_API_KEY,CLOUDFLARE_ACCOUNT_ID
 import ollama
 from prompt_toolkit import prompt
 import random
@@ -116,13 +116,17 @@ CASUAL_CHAT_SYSTEM_PROMPT = '''你是一个地道美式的口语专家。
 必须精简化回答，不要说废话，篇幅尽量短。
 你的解释主要使用中文，可以有部分英文运用。'''
 
-SENTENCE_PARSE_SYSTEM_PROMPT = """你是一个专业的英语长难句分析助手，帮助中文母语的英语学习者理解复杂句子结构。
-用户会给你一句英文长难句，请按以下步骤分析：
-1. **直译与自然**：给一个贴近原文结构的直译，帮助用户看清英文逻辑，而不是给一个已经本地化的意译。然后给一个流畅、符合中文表达习惯的整体翻译，作为对照。
+SENTENCE_PARSE_SYSTEM_PROMPT = """你是一个专业的英语表达分析助手，帮助中文母语的英语学习者理解地道的句子或复杂句子结构。
+用户会给你一句子，请按以下步骤分析：
+1. **翻译**：给一个流畅、符合中文表达习惯的整体翻译。
+如果时长难句：
 2. **主干提取**：先指出这句话的主谓宾（或主系表）核心骨架是什么，用最简单的话说清楚"这句话到底在说什么"。
 3. **结构拆解**：把句子拆分成若干个意群/成分（从句、插入语、分词短语、介词短语等），标出每一部分的语法角色（例如：定语从句修饰什么、状语说明什么条件/原因/时间）。
 4. **难点提示**：如果句子里有容易造成理解偏差的地方（比如指代不清的代词、倒装、省略、双重否定、非常规语序），单独指出来提醒。
 5. **句型举例**：用这个句子的特点结构，列举1-2个其他句子。目的是让用户彻底掌握这个句法句型。
+如果是简单的地道表达句：
+2. **分析**：有哪些固定搭配、习语。容易误解的难点是什么。
+3. **适合的使用场景**：用在什么场景下，最合适。
 
 要求：
 - 语言简洁，不要长篇大论解释语法术语，遇到术语用一句话点出即可
@@ -254,16 +258,16 @@ PRACTICE_CONCLUSION_SYSTEM_PROMPT = '''你是一个专业的英语学习诊断�
 
 # name 字段用来在下面路由逻辑里区分不同供应商的 header 命名规则
 PROVIDERS = [
-        {
-        'name': 'cerebras',
-        'client': OpenAI(api_key=CEREBRAS_API_KEY, base_url='https://api.cerebras.ai/v1'),
-        'models': ['gpt-oss-120b']
-    },
             {
         'name': 'groq',
         'client': OpenAI(api_key=GROQ_API_KEY, base_url='https://api.groq.com/openai/v1'),
         'models': ['qwen/qwen3.6-27b','openai/gpt-oss-120b']
     },
+            {
+        'name': 'cloudflare',
+        'client': OpenAI(api_key=CLOUDFLARE_API_KEY, base_url=f'https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/v1'),
+        'models': ['@cf/zai-org/glm-4.7-flash','@cf/nvidia/nemotron-3-120b-a12b',]
+    }
 
 ]
 
