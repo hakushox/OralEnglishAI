@@ -1,6 +1,6 @@
 import multiprocessing
 multiprocessing.freeze_support()
-
+import subprocess
 import edge_tts
 import sounddevice as sd
 import threading
@@ -41,15 +41,14 @@ if getattr(sys, 'frozen', False):
                 sys.exit(0)   # Windows: 交给updater重启，自己只需退出
             else:
                 print('更新完成，即将重启...')
-                subprocess.Popen([str(exe_path)])
-                sys.exit(0)
-                # print('更新完成，即将重启...')
-                # os.execv(str(exe_path), [str(exe_path)])   # macOS: 保持原来的自己重启
+                try:
+                    os.execv(str(exe_path), [str(exe_path)])
+                except Exception as relaunch_err:
+                    print(f'自动重启失败（{relaunch_err}），请手动重新打开程序')
+                    os._exit(1)
     except Exception as e:
         print(f'更新失败，原因{e}\n直接使用当前版本')
         
-
-import subprocess
 from review import (
     review_patterns, call_cloud_with_fallback, analyze_sentence_structure, review_parse_summaries, words_practice,
     DEEP_ASK_SYSTEM_PROMPT, SUMMARY_PROMPT, call_local_stream, get_word_usage, review_words_summaries,
@@ -773,6 +772,13 @@ if sys.platform == 'win32':
 
 else:
     model = WhisperModel('large-v3-turbo', device='cpu', compute_type='int8', cpu_threads=6)
+
+if getattr(sys, 'frozen', False):
+    try:
+        from save_path import confirm_pending_version
+        confirm_pending_version()
+    except Exception:
+        pass
 
 new = None
 new_c = None

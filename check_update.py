@@ -1,7 +1,7 @@
 import requests
 import sys
 from pathlib import Path
-from save_path import get_local_version, save_local_version
+from save_path import get_local_version, save_local_version,save_pending_version  
 import os
 import stat
 import zipfile
@@ -66,17 +66,34 @@ def check_and_update(app_dir):
         updater_path = app_dir.parent / 'SpeakNatural_Updater' / 'updater.exe'
         exe_name = 'SpeakNatural.exe'
         subprocess.Popen([str(updater_path), str(app_dir), str(zip_path), exe_name])
-        save_local_version(latest_version)
+        save_pending_version(latest_version)
         return True
     else:
         print('正在解压...')
         temp_extract_dir = app_dir.parent / 'update_temp'
+        if temp_extract_dir.exists():
+            shutil.rmtree(temp_extract_dir)
+
         with zipfile.ZipFile(zip_path, 'r') as zf:
             zf.extractall(temp_extract_dir)
 
-        shutil.rmtree(app_dir)
         new_app_dir = temp_extract_dir / 'SpeakNatural'
-        new_app_dir.replace(app_dir)
+        if not new_app_dir.exists():
+            raise RuntimeError(f'解压结果异常，未找到 {new_app_dir}，更新已中止，未影响当前版本')
+
+        # 校验通过后，再做替换：先把旧版本挪到备份位，再放新版本，最后清理备份
+        backup_dir = app_dir.parent / 'SpeakNatural_backup'
+        if backup_dir.exists():
+            shutil.rmtree(backup_dir)
+
+        app_dir.replace(backup_dir)      # 旧版本改名（几乎瞬间完成，不是删除）
+        try:
+            new_app_dir.replace(app_dir) # 新版本就位
+        except Exception:
+            backup_dir.replace(app_dir)  # 失败就把旧版本挪回来
+            raise
+        else:
+            shutil.rmtree(backup_dir, ignore_errors=True)  # 确认成功后再删旧版本
 
         zip_path.unlink()
         shutil.rmtree(temp_extract_dir, ignore_errors=True)
@@ -84,6 +101,5 @@ def check_and_update(app_dir):
         exe_file = app_dir / 'SpeakNatural'
         st = os.stat(exe_file)
         os.chmod(exe_file, st.st_mode | stat.S_IXUSR)
-
-        save_local_version(latest_version)
+        save_pending_version(latest_version)
         return True

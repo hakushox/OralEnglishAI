@@ -143,3 +143,30 @@ def update_word_proficiency(word, proficiency, issue):
         json.dump(datas, f, ensure_ascii=False, indent=4)
 
 # os.startfile(SAVE_DIR)
+
+def get_pending_version():
+    """读取"待确认"的版本号（文件已替换，但还没验证能正常启动）"""
+    if not VERSION_FILE.exists():
+        return None
+    return json.loads(VERSION_FILE.read_text(encoding='utf-8')).get('pending_version')
+
+def save_pending_version(version):
+    """更新流程替换完文件后调用：只标记"待确认"，不动正式版本号"""
+    data = {}
+    if VERSION_FILE.exists():
+        data = json.loads(VERSION_FILE.read_text(encoding='utf-8'))
+    data['pending_version'] = version
+    VERSION_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=4),
+                            encoding='utf-8')
+
+def confirm_pending_version():
+    """新版本自己确认启动成功后调用：把 pending_version 转正为正式 version"""
+    if not VERSION_FILE.exists():
+        return
+    data = json.loads(VERSION_FILE.read_text(encoding='utf-8'))
+    pending = data.get('pending_version')
+    if pending:
+        data['version'] = pending
+        data.pop('pending_version', None)
+        VERSION_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=4),
+                                encoding='utf-8')
