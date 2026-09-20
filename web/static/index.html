@@ -18,23 +18,25 @@
   </nav>
 
   <!-- ==================== 练习 ====================
-       递进式：data-stage 控制当前阶段，前一阶段的内容缩小变暗退到顶部当上下文，
-       不是直接消失 —— 用户随时能抬眼看原句。显隐规则全在 style.css 的属性选择器里。 -->
+       递进式：data-stage 控制阶段，交互项靠"浮现"而不是常驻按钮。
+       .field 是通用的「输入框 + 内嵌麦克风」组件，别的模块也用它。 -->
   <section class="view on" id="v-practice">
     <div class="stage" id="p-stage" data-stage="1">
 
-      <button class="stage-x" id="p-reset" aria-label="清空重来" title="清空重来">✕</button>
-
       <!-- ① 输入 -->
       <div class="st1">
-        <textarea id="p-input" rows="3" placeholder="写一句英文，或者点下面的麦克风直接说"></textarea>
+        <div class="field">
+          <textarea id="p-input" rows="3" placeholder="写一句英文，或者点右下角的麦克风说"></textarea>
+          <button class="mic-btn" data-mic="#p-input" aria-label="语音输入">🎙</button>
+          <div class="wave" data-wave></div>
+        </div>
         <div class="row" style="margin-top:12px">
           <button class="pill acc" id="p-go">改一改</button>
           <span class="hint">⌘ + Enter 提交</span>
         </div>
       </div>
 
-      <!-- ②③④ 句子区（进入解析后缩小退场） -->
+      <!-- ②③④ 句子区（进入解析后缩小退场当上下文） -->
       <div class="st2up sent">
         <div class="label">你说的</div>
         <div class="line">
@@ -45,41 +47,32 @@
         <div class="line">
           <span class="revised en" id="p-revised"></span>
           <button class="ico" id="p-play-rev" aria-label="朗读地道版">🔊</button>
+          <button class="bookmark" id="p-save" aria-label="存进档案" title="存进档案">🔖</button>
         </div>
       </div>
 
-      <!-- ② 唯一主行动 -->
-      <div class="st2 row" style="margin-top:24px">
-        <button class="pill acc big" id="p-why">为什么这么改</button>
-        <button class="pill" id="p-save">存档</button>
-      </div>
+      <!-- ② 下一步是邀请，不是按钮 -->
+      <button class="invite st2" id="p-why">想知道为什么这么改<span class="chev">⌄</span></button>
 
-      <!-- ③ 解析（主角） -->
-      <div class="st3 slide-up">
-        <div class="card" id="p-why-text"></div>
-        <div class="row" style="margin-top:10px">
-          <button class="pill" id="p-save-note">把这段分析存进记录</button>
-        </div>
-      </div>
+      <!-- ③④ 解析线索：每轮一条，旧的折叠成一行，随时能翻回去 -->
+      <div class="st3 thread" id="p-thread"></div>
 
-      <!-- ④ 追问：解析流完之后才滑进来，这个动作本身就是「你可以继续问」的提示 -->
-      <div class="st4 slide-up" style="margin-top:14px">
+      <!-- ④ 追问 + 换一句 -->
+      <div class="st4 slide-up" style="margin-top:16px">
         <div class="inrow">
-          <input type="text" id="p-why-input" placeholder="还有什么不解？">
+          <div class="field single">
+            <input type="text" id="p-why-input" placeholder="还有什么不解？">
+            <button class="mic-btn" data-mic="#p-why-input" aria-label="语音输入">🎙</button>
+            <div class="wave" data-wave></div>
+          </div>
           <button class="pill acc" id="p-why-send">追问</button>
         </div>
+        <button class="invite subtle" id="p-again">换一句继续练<span class="chev">⌄</span></button>
       </div>
 
-      <div class="row" style="margin-top:10px;justify-content:space-between">
+      <div class="row" style="margin-top:6px;justify-content:space-between">
         <span class="hint" id="p-msg"></span>
         <span class="hint" id="p-src"></span>
-      </div>
-
-      <!-- 录音：①展开成波形条，②③④收成一个麦克风圆钮 -->
-      <div class="recbar" id="p-recbar">
-        <button class="mic" id="p-mic" aria-label="开始录音">●</button>
-        <div class="wave" id="p-wave"></div>
-        <span class="muted" id="p-recstate" style="margin-left:auto">点麦克风开始说</span>
       </div>
 
     </div>
@@ -88,7 +81,11 @@
   <!-- ==================== 单词 ==================== -->
   <section class="view" id="v-word">
     <div class="inrow" style="margin-bottom:24px">
-      <input type="text" id="w-add" placeholder="输入想查的单词">
+      <div class="field single">
+        <input type="text" id="w-add" placeholder="输入想查的单词">
+        <button class="mic-btn" data-mic="#w-add" aria-label="语音输入">🎙</button>
+        <div class="wave" data-wave></div>
+      </div>
       <button class="pill acc" id="w-go">查询</button>
     </div>
     <div class="two-col">
@@ -108,7 +105,11 @@
       <div class="card" id="s-analysis" style="font-size:14px;line-height:1.75;color:var(--text-2)"></div>
       <div id="s-thread"></div>
       <div class="inrow" style="margin:14px 0 12px">
-        <input type="text" id="s-more" placeholder="还有什么不解？">
+        <div class="field single">
+          <input type="text" id="s-more" placeholder="还有什么不解？">
+          <button class="mic-btn" data-mic="#s-more" aria-label="语音输入">🎙</button>
+          <div class="wave" data-wave></div>
+        </div>
         <button class="pill acc" id="s-more-send">追问</button>
       </div>
       <div class="row">
@@ -117,7 +118,11 @@
       </div>
     </div>
     <div id="s-input-box">
-      <textarea id="s-input" rows="3" placeholder="贴一句想拆解的长难句"></textarea>
+      <div class="field">
+        <textarea id="s-input" rows="3" placeholder="贴一句想拆解的长难句"></textarea>
+        <button class="mic-btn" data-mic="#s-input" aria-label="语音输入">🎙</button>
+        <div class="wave" data-wave></div>
+      </div>
       <div class="row" style="margin-top:12px">
         <button class="pill acc" id="s-go">分析结构</button>
       </div>
@@ -134,7 +139,11 @@
     </div>
     <div class="bubbles en" id="c-bubbles"></div>
     <div class="inrow">
-      <input type="text" id="c-input" placeholder="你想聊什么？">
+      <div class="field single">
+        <input type="text" id="c-input" placeholder="你想聊什么？">
+        <button class="mic-btn" data-mic="#c-input" aria-label="语音输入">🎙</button>
+        <div class="wave" data-wave></div>
+      </div>
       <button class="pill acc" id="c-send">发送</button>
     </div>
     <div class="row" style="margin-top:12px">

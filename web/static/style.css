@@ -125,6 +125,16 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
   margin: 0 0 8px; padding: 6px 0 6px 12px;
   border-left: 2px solid var(--accent-dim); color: var(--text);
 }
+.card table {
+  width: 100%; border-collapse: collapse; margin: 0 0 10px; font-size: 13px;
+}
+.card th, .card td {
+  text-align: left; vertical-align: top;
+  padding: 7px 10px 7px 0; border-bottom: 0.5px solid var(--border);
+}
+.card th { color: var(--text-4); font-weight: 400; font-size: 12px; }
+.card tr:last-child td { border-bottom: none; }
+
 .md-h { color: var(--text); font-size: 14px; margin: 12px 0 7px; }
 .md-h:first-child { margin-top: 0; }
 
@@ -214,33 +224,89 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 .draft .del .w { text-decoration: line-through; }
 .draft .del .w.lit { color: var(--accent-on); text-decoration-color: var(--accent-on); }
 
-/* ============ 录音条 ============ */
-.recbar {
-  border-top: 0.5px solid var(--border); padding-top: 20px;
-  margin-top: 26px; display: flex; align-items: center; gap: 16px;
-}
-.mic {
-  width: 40px; height: 40px; border-radius: 50%; flex: none;
-  background: var(--surface-2); color: var(--text-3);
-  border: none; cursor: pointer; font-size: 18px;
+/* ============ 输入框 + 内嵌麦克风 ============
+   所有模块的输入框都套 .field，语音入口处处都有，而不是页面底下孤零零一个圆钮。
+   录音结果只填进这个框，不切换页面状态 —— 说话是输入方式，不是"开始新对话"。 */
+.field { position: relative; flex: 1; min-width: 0; }
+.field input, .field textarea { padding-right: 44px; }
+
+.mic-btn {
+  position: absolute; right: 9px; bottom: 9px;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-5); font-size: 14px; line-height: 1;
   display: inline-flex; align-items: center; justify-content: center;
-  transition: background 0.2s var(--ease), color 0.2s var(--ease);
+  transition: color 0.15s var(--ease), background 0.15s var(--ease);
 }
-.mic:hover { background: #2b2b33; color: var(--text); }
-.mic.rec { background: var(--accent); color: var(--accent-on); }
+.field.single .mic-btn { top: 50%; bottom: auto; transform: translateY(-50%); }
+.mic-btn:hover { color: var(--accent); background: var(--surface-2); }
+.field.recording .mic-btn { color: var(--accent-on); background: var(--accent); }
 
-.wave { display: flex; align-items: center; gap: 3px; height: 34px; }
-
-/* 阶段①录音条完整展开；②③④收成一个麦克风圆钮 —— 这是口语 app，
-   语音入口任何时候都该在手边，打字才需要先点 ✕ 回到阶段①。
-   但录音进行中波形必须显示，所以 .recording 优先级要压过折叠规则。 */
-.stage:not([data-stage="1"]) .recbar { border-top: none; padding-top: 10px; margin-top: 18px; }
-.stage:not([data-stage="1"]) .recbar:not(.recording) .wave,
-.stage:not([data-stage="1"]) .recbar:not(.recording) #p-recstate { display: none; }
+.wave {
+  display: none; position: absolute; left: 16px; right: 48px; top: 16px;
+  align-items: center; gap: 3px; height: 26px; pointer-events: none;
+}
+.field.single .wave { top: 50%; transform: translateY(-50%); }
+.field.recording .wave { display: flex; }
+.field.recording input, .field.recording textarea { caret-color: transparent; }
+.field.recording input::placeholder, .field.recording textarea::placeholder { color: transparent; }
 .wave i {
   width: 3px; height: 3px; background: var(--accent-dim);
   border-radius: 2px; transition: height 0.08s linear, background 0.15s linear;
 }
+
+/* ============ 浮现式的"下一步" ============
+   按钮是「这里有个控件」，邀请是「你接下来想做这个」。
+   箭头一直轻微上下浮动，是给新用户的视线引导。 */
+.invite {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: none; border: none; cursor: pointer;
+  font: inherit; font-size: 15px; color: var(--accent-text);
+  padding: 12px 0; transition: gap 0.2s var(--ease), color 0.15s var(--ease);
+}
+.invite:hover { gap: 13px; }
+.invite .chev { font-size: 15px; animation: bob 1.9s ease-in-out infinite; }
+.invite.subtle { font-size: 13px; color: var(--text-4); margin-top: 6px; }
+.invite.subtle:hover { color: var(--text-2); }
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
+
+/* ============ 书签：保存的统一入口 ============
+   所有模块的"存进记录"都用这个：读完一段内容后滑入并脉动两下。
+   出现的那个动作就是提示，不需要文字标签，也不占版面。 */
+.bookmark {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-5); font-size: 14px; padding: 2px 5px; line-height: 1;
+  opacity: 0; transform: translateY(-5px); pointer-events: none;
+  transition: opacity 0.35s var(--ease), transform 0.35s var(--ease), color 0.15s var(--ease);
+}
+.bookmark.appear {
+  opacity: 0.65; transform: none; pointer-events: auto;
+  animation: bmPulse 1.1s var(--ease) 0.4s 2;
+}
+.bookmark:hover { opacity: 1; color: var(--accent); }
+.bookmark.saved { opacity: 1; color: var(--accent); animation: none; }
+@keyframes bmPulse { 0%, 100% { transform: none; } 50% { transform: scale(1.3); } }
+
+/* ============ 解析线索：多轮追问可折叠回看 ============ */
+.thread { margin-top: 4px; }
+.round { border-bottom: 0.5px solid var(--border); }
+.round:last-child { border-bottom: none; }
+.round-head {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  background: none; border: none; cursor: pointer; text-align: left;
+  font: inherit; font-size: 13px; color: var(--text-4);
+  padding: 13px 0; transition: color 0.15s var(--ease);
+}
+.round-head:hover { color: var(--text-2); }
+.round.open .round-head { color: var(--text); }
+.round-head .chev {
+  margin-left: auto; color: var(--text-5); font-size: 13px;
+  transition: transform 0.25s var(--ease);
+}
+.round.open .round-head .chev { transform: rotate(180deg); }
+.round-body { display: none; position: relative; padding: 0 0 18px; }
+.round.open .round-body { display: block; animation: slideup 0.4s var(--ease) both; }
+.round-body .bookmark { position: absolute; top: -34px; right: 24px; }
 
 /* ============ 单词页 ============ */
 .two-col { display: grid; grid-template-columns: 158px minmax(0, 1fr); gap: 22px; }

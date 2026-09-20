@@ -16,8 +16,12 @@
 - **练习页已改成递进式布局**：`data-stage` 四阶段（输入 → 改写 → 解析 → 追问），
   前一阶段缩小变暗退到顶部当上下文而不是消失；解析是主角，朗读收成行内小图标；
   追问在解析流完后才滑入；右上 ✕ 清空；录音条在非输入阶段收成麦克风圆钮。
+- **练习页的交互模式**（其余模块应对齐）：下一步用「浮现式邀请」而不是按钮；
+  保存统一用 `.bookmark` 书签图标，内容读完后滑入并脉动两下；多轮问答用 `.round`
+  折叠线索，旧的收成一行可点开；每个输入框都套 `.field` 内嵌麦克风，
+  录音只填进那个框、不切换页面状态。
 - **下一步**：把单词 / 长难句 / 随便问三个模块接真（逻辑在 `review.py` 里都现成），
-  以及浏览器录音上传 + faster-whisper 转写。
+  以及浏览器录音上传 + faster-whisper 转写（目前转写仍返回写死的句子）。
 
 ## 怎么跑
 
@@ -126,6 +130,21 @@ Linux 是 `~/.config`）。里面是 `Oral_English_Exercise.json`（造句记录
 
 **前后端接口**：流式接口返回 NDJSON，每行一个 JSON（`{"delta": "..."}`），
 前端用 `fetch` + `ReadableStream` 逐行消费（见 `app.js:stream()`）。不是 SSE。
+
+**改 HTML 删元素时，务必回头搜 `app.js` 里对应的 `$('#id')`。**
+`app.js` 是顶层脚本，`$('#不存在的id').addEventListener(...)` 会抛错并让**整个脚本
+从那一行起全部停止执行**，后面所有事件绑定都失效。而且函数声明会提升，
+控制台里 `typeof someFn` 仍是 `'function'`，看起来一切正常，极难排查。
+一条命令扫出所有悬空引用：
+
+```bash
+python3 -c "
+import re;from pathlib import Path
+js=Path('web/static/app.js').read_text();html=Path('web/static/index.html').read_text()
+ids=set(re.findall(r'id=\"([^\"]+)\"',html))
+used={m.group(1) for m in re.finditer(r'\\$\\$?\(\s*[\'\"]#([A-Za-z0-9_-]+)',js)}
+print(sorted(used-ids))"
+```
 
 ## git
 

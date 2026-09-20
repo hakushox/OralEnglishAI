@@ -62,25 +62,48 @@ function mdToHtml(src) {
   const inline = (s) => s
     .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')          // 必须先于斜体，否则 ** 会被拆成两个斜体
     .replace(/\*([^*\n]+)\*/g, '<i>$1</i>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>');
-  let html = '', inList = false;
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/&lt;br\s*\/?&gt;/g, '<br>');           // 模型偶尔混着吐原生 <br>，只放行这一个标签
+
+  // 表格：模型做 A/B 对比时几乎必用，而"两个词有什么区别"正是这个 app 的高频问题
+  const table = (lines) => {
+    const rows = lines.map((l) => l.replace(/^\||\|$/g, '').split('|').map((c) => c.trim()));
+    const body = rows.filter((r) => !r.every((c) => /^:?-{2,}:?$/.test(c)));
+    if (!body.length) return '';
+    const [head, ...rest] = body;
+    return '<table><thead><tr>' + head.map((c) => `<th>${inline(c)}</th>`).join('') +
+      '</tr></thead><tbody>' +
+      rest.map((r) => '<tr>' + r.map((c) => `<td>${inline(c)}</td>`).join('') + '</tr>').join('') +
+      '</tbody></table>';
+  };
+
+  let html = '', inList = false, buf = [];
+  const flushList = () => { if (inList) { html += '</ul>'; inList = false; } };
+  const flushTable = () => { if (buf.length) { html += table(buf); buf = []; } };
+
   for (const raw of esc(src).split('\n')) {
     const line = raw.trim();
+
+    if (line.startsWith('|') && line.length > 1) { flushList(); buf.push(line); continue; }
+    flushTable();
+
     const li = line.match(/^[*\-+]\s+(.*)$/);
     if (li) {
       if (!inList) { html += '<ul>'; inList = true; }
       html += `<li>${inline(li[1])}</li>`;
       continue;
     }
-    if (inList) { html += '</ul>'; inList = false; }
+    flushList();
     if (!line) continue;
+
     const h = line.match(/^#{1,4}\s+(.*)$/);
     const q = line.match(/^&gt;\s*(.*)$/);           // esc() 已经把 > 转成了 &gt;
     if (h) html += `<div class="md-h">${inline(h[1])}</div>`;
     else if (q) html += `<blockquote>${inline(q[1])}</blockquote>`;
     else html += `<p>${inline(line)}</p>`;
   }
-  return inList ? html + '</ul>' : html;
+  flushList(); flushTable();
+  return html;
 }
 
 const wrapWords = (words) =>
@@ -206,7 +229,7 @@ function resetStage() {
   $('#p-input').value = '';
   $('#p-draft').innerHTML = '';
   $('#p-revised').innerHTML = '';
-  $('#p-why-text').innerHTML = '';
+  $('#p-thread').innerHTML = '';
   $('#p-src').textContent = '';
   msg('');
   $('#p-save').textContent = '存档';
@@ -215,7 +238,6 @@ function resetStage() {
   $('#p-input').focus();
 }
 
-$('#p-reset').addEventListener('click', resetStage);
 
 async function correct() {
   const text = $('#p-input').value.trim();
@@ -224,6 +246,10 @@ async function correct() {
   state.revised = '';
   $('#p-input').value = '';
   setStage(2);
+  const bm = $('#p-save');
+  bm.classList.remove('saved');
+  bm.classList.remove('appear');
+  bm.title = '存进档案';
   $('#p-draft').textContent = text;
   const rev = $('#p-revised');
   rev.textContent = '';
@@ -239,7 +265,10 @@ async function correct() {
     if (m.warn || m.error) msg(m.warn || m.error);
   });
   rev.classList.remove('caret');
-  if (state.revised.trim()) renderDiff(state.draft, state.revised);
+  if (state.revised.trim()) {
+    renderDiff(state.draft, state.revised);
+    $('#p-save').classList.add('appear');   // 改写完成，存档书签才浮现
+  }
 }
 
 $('#p-go').addEventListener('click', correct);
@@ -255,34 +284,74 @@ $('#p-save').addEventListener('click', async (e) => {
     body: JSON.stringify({ draft: state.draft, revised: state.revised }),
   })).json();
   if (r.ok) {
-    e.target.textContent = `已存档 · 共 ${r.total} 条`;
-    e.target.disabled = true;
+    e.target.classList.add('saved');
+    e.target.title = `已存档 · 共 ${r.total} 条`;
+    $('#arc-count').textContent = r.total;
   } else {
     msg(r.msg || '存档失败');
   }
 });
 
-async function askWhy(url, body) {
-  const t = $('#p-why-text');
+/* ========== 解析线索：每轮一条，旧的折叠成一行 ==========
+   之前是一张卡片被反复清空重写，追问会把上一轮的分析擦掉。
+   现在每轮独立成 .round，点标题头展开/收起，随时能翻回去看。 */
+function addRound(title) {
+  const thread = $('#p-thread');
+  $$('.round', thread).forEach((r) => r.classList.remove('open'));   // 新的一轮进来，旧的收起
+
+  const el = document.createElement('div');
+  el.className = 'round open';
+  el.innerHTML = `
+    <button class="round-head"><span>${esc(title)}</span><span class="chev">⌄</span></button>
+    <div class="round-body">
+      <button class="bookmark" aria-label="把这段分析存进记录" title="把这段分析存进记录">🔖</button>
+      <div class="card md"></div>
+    </div>`;
+  thread.appendChild(el);
+
+  $('.round-head', el).addEventListener('click', () => {
+    const wasOpen = el.classList.contains('open');
+    $$('.round', thread).forEach((r) => r.classList.remove('open'));
+    if (!wasOpen) el.classList.add('open');
+  });
+  return el;
+}
+
+async function askWhy(url, body, title) {
+  const round = addRound(title);
+  const md = $('.md', round);
   let raw = '';
-  t.textContent = '';
-  t.classList.add('caret');
-  // 流式阶段先按纯文本追加 —— markdown 语法是跨行的，边收边渲染会一直闪烂格式
+  md.classList.add('caret');
+  // 流式阶段先按纯文本追加 —— markdown 语法跨行，边收边渲染会一直闪烂格式
   await stream(url, body, (m) => {
-    if (m.delta) { raw += m.delta; t.textContent = raw; }
+    if (m.delta) { raw += m.delta; md.textContent = raw; }
     if (m.warn || m.error) msg(m.warn || m.error);
   });
-  t.classList.remove('caret');
-  if (raw.trim()) t.innerHTML = mdToHtml(raw);
-  // 解析读完之后追问框才滑进来 —— 这个出现动作本身就是「可以继续问」的提示，
-  // 一直摆在那儿的输入框是背景板，没人会注意。
-  setStage(4);
+  md.classList.remove('caret');
+  if (raw.trim()) md.innerHTML = mdToHtml(raw);
+
+  const bm = $('.bookmark', round);
+  bm.classList.add('appear');            // 滑入 + 脉动两下，这个动作本身就是"可以存"的提示
+  bm.addEventListener('click', () => saveNote(bm));
+
+  setStage(4);                           // 读完了，追问框才滑进来
+}
+
+async function saveNote(btn) {
+  const r = await (await fetch('/api/practice/save-note', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ revised: state.revised }),
+  })).json();
+  if (r.ok) { btn.classList.add('saved'); btn.title = '已存进记录'; }
+  else msg(r.msg || '保存失败');
 }
 
 $('#p-why').addEventListener('click', () => {
   setStage(3);
-  askWhy('/api/practice/why', { draft: state.draft, revised: state.revised });
+  askWhy('/api/practice/why', { draft: state.draft, revised: state.revised }, '为什么这么改');
 });
+
+$('#p-again').addEventListener('click', resetStage);
 
 /* 输入框统一走这个：键盘和按钮两条路都要有，不能只留快捷键。
    单行 input 用回车提交；textarea 里回车是换行，改用 ⌘/Ctrl + 回车。 */
@@ -305,82 +374,70 @@ function bindSend(inputSel, buttonSel, handler) {
 }
 
 bindSend('#p-why-input', '#p-why-send',
-  (question) => askWhy('/api/practice/why/followup', { question }));
+  (question) => askWhy('/api/practice/why/followup', { question }, question));
 
-$('#p-save-note').addEventListener('click', async (e) => {
-  const r = await (await fetch('/api/practice/save-note', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ revised: state.revised }),
-  })).json();
-  msg(r.ok ? '分析已挂到这条记录上' : (r.msg || '保存失败'));
-});
+/* ========== 录音：每个输入框各管各的 ==========
+   录到的文字只填进自己那个框，不切换页面状态 ——
+   说话是一种输入方式，不该等于"开始新对话"。 */
+const BARS = 22;
 
-/* ========== 录音 + 实时波形 ========== */
-const BARS = 26;
-const wave = $('#p-wave');
-for (let i = 0; i < BARS; i++) wave.appendChild(document.createElement('i'));
-const bars = $$('i', wave);
+function setupMic(btn) {
+  const field = btn.closest('.field');
+  const target = $(btn.dataset.mic);
+  const wave = $('[data-wave]', field);
+  for (let i = 0; i < BARS; i++) wave.appendChild(document.createElement('i'));
+  const bars = $$('i', wave);
 
-let rec = { on: false, ctx: null, raf: null, stream: null };
-
-function drawBars(values) {
-  bars.forEach((b, i) => {
+  const draw = (values) => bars.forEach((b, i) => {
     const v = values[i] ?? 0;
     b.style.height = Math.max(3, v) + 'px';
-    b.style.background = v > 22 ? 'var(--accent-hi)' : v > 11 ? 'var(--accent)' : 'var(--accent-dim)';
+    b.style.background = v > 17 ? 'var(--accent-hi)' : v > 9 ? 'var(--accent)' : 'var(--accent-dim)';
   });
-}
 
-async function startRec() {
-  rec.on = true;
-  $('#p-mic').classList.add('rec');
-  $('#p-recbar').classList.add('recording');   // 折叠态下也要把波形放出来
-  $('#p-recstate').textContent = '录音中 · 再点一次结束';
-  try {
-    rec.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    rec.ctx = ctx;
-    const an = ctx.createAnalyser();
-    an.fftSize = 64;
-    ctx.createMediaStreamSource(rec.stream).connect(an);
-    const data = new Uint8Array(an.frequencyBinCount);
-    const loop = () => {
-      an.getByteFrequencyData(data);
-      drawBars([...data].slice(0, BARS).map((v) => (v / 255) * 34));
-      rec.raf = requestAnimationFrame(loop);
-    };
-    loop();
-  } catch (err) {
-    $('#p-recstate').textContent = '拿不到麦克风，先用假波形演示';
-    const loop = () => {
-      drawBars(Array.from({ length: BARS }, () => 4 + Math.random() * 28));
-      rec.raf = setTimeout(loop, 90);
-    };
-    loop();
+  let on = false, raf = null, media = null, ctx = null;
+
+  async function start() {
+    on = true;
+    field.classList.add('recording');
+    try {
+      media = await navigator.mediaDevices.getUserMedia({ audio: true });
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const an = ctx.createAnalyser();
+      an.fftSize = 64;
+      ctx.createMediaStreamSource(media).connect(an);
+      const data = new Uint8Array(an.frequencyBinCount);
+      const loop = () => {
+        an.getByteFrequencyData(data);
+        draw([...data].slice(0, BARS).map((v) => (v / 255) * 26));
+        raf = requestAnimationFrame(loop);
+      };
+      loop();
+    } catch (err) {
+      msg('拿不到麦克风权限，先用假波形演示');
+      const loop = () => { draw(Array.from({ length: BARS }, () => 4 + Math.random() * 20)); raf = setTimeout(loop, 90); };
+      loop();
+    }
   }
+
+  async function stop() {
+    on = false;
+    if (raf) { cancelAnimationFrame(raf); clearTimeout(raf); raf = null; }
+    if (media) { media.getTracks().forEach((t) => t.stop()); media = null; }
+    if (ctx) { ctx.close(); ctx = null; }
+    draw(new Array(BARS).fill(0));
+    btn.textContent = '…';
+    const d = await (await fetch('/api/practice/transcribe', { method: 'POST' })).json();
+    btn.textContent = '🎙';
+    field.classList.remove('recording');
+    // 只填进这个框，让用户先改再提交 —— 识别总有错，跟终端版 edit_text() 一个道理
+    target.value = d.text;
+    target.focus();
+  }
+
+  btn.addEventListener('click', () => (on ? stop() : start()));
 }
 
-function stopRec() {
-  rec.on = false;
-  $('#p-mic').classList.remove('rec');
-  $('#p-recstate').textContent = '转写中…（骨架阶段返回示例句）';
-  if (rec.raf) { cancelAnimationFrame(rec.raf); clearTimeout(rec.raf); rec.raf = null; }
-  if (rec.stream) { rec.stream.getTracks().forEach((t) => t.stop()); rec.stream = null; }
-  if (rec.ctx) { rec.ctx.close(); rec.ctx = null; }
-  drawBars(new Array(BARS).fill(0));
-  fetch('/api/practice/transcribe', { method: 'POST' })
-    .then((r) => r.json())
-    .then((d) => {
-      // 回阶段①把转写结果填进输入框，让用户先改再提交 ——
-      // 跟终端版 edit_text() 一个道理，语音识别总有错，不该直接送去纠正。
-      setStage(1);
-      $('#p-recbar').classList.remove('recording');
-      $('#p-input').value = d.text;
-      $('#p-recstate').textContent = '转写完成，可改后提交';
-    });
-}
-
-$('#p-mic').addEventListener('click', () => (rec.on ? stopRec() : startRec()));
+$$('.mic-btn').forEach(setupMic);
 
 /* ==================== 单词 ==================== */
 // 实心用强调色、空心用暗色，不然两个字形在小字号下几乎分不出来
