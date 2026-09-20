@@ -4,8 +4,8 @@
     {
       "name": "speaknatural-web",
       "runtimeExecutable": "venv/bin/python",
-      "runtimeArgs": ["-m", "uvicorn", "web.server:app", "--port", "8765", "--reload"],
-      "port": 8765
+      "runtimeArgs": ["-m", "uvicorn", "web.server:app", "--port", "8766", "--reload"],
+      "port": 8766
     }
   ]
 }

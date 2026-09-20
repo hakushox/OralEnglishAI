@@ -22,6 +22,9 @@ venv/bin/python edgetts.py    # 终端版
 venv/bin/python run_web.py    # 浏览器版，自动开 127.0.0.1:8765
 ```
 
+**8765 是我（用户）的端口。** 你验证用的预览服务走 8766（`.claude/launch.json` 里配好了），
+不要占用 8765，否则我跑 `run_web.py` 会撞上 "address already in use"。
+
 没有测试、没有 lint。改完靠手动跑一遍验证。
 打包命令见仓库里的 `notes` 文件（`SpeakNatural.spec` 是生成物，已 gitignore，别依赖它）。
 

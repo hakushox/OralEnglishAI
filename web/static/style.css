@@ -102,6 +102,11 @@ textarea:focus, input[type=text]:focus {
 }
 textarea::placeholder, input::placeholder { color: var(--text-5); }
 
+/* 输入框 + 发送按钮：所有模块统一用这个，别再单独写内联尺寸 */
+.inrow { display: flex; align-items: center; gap: 10px; }
+.inrow input { flex: 1; min-width: 0; }
+.inrow .pill { flex: none; padding: 10px 18px; }
+
 .muted { color: var(--text-4); font-size: 12px; }
 .hint { color: var(--text-5); font-size: 12px; }
 

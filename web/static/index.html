@@ -36,7 +36,10 @@
       </div>
       <div id="p-why-box" style="display:none;margin-top:16px">
         <div class="card" id="p-why-text"></div>
-        <input type="text" id="p-why-input" placeholder="还有什么不解？" style="margin-top:10px">
+        <div class="inrow" style="margin-top:10px">
+          <input type="text" id="p-why-input" placeholder="还有什么不解？">
+          <button class="pill acc" id="p-why-send">追问</button>
+        </div>
         <div class="row" style="margin-top:10px">
           <button class="pill" id="p-save-note" style="display:none">把这段分析存进记录</button>
         </div>
@@ -60,11 +63,14 @@
 
   <!-- ==================== 单词 ==================== -->
   <section class="view" id="v-word">
+    <div class="inrow" style="margin-bottom:24px">
+      <input type="text" id="w-add" placeholder="输入想查的单词">
+      <button class="pill acc" id="w-go">查询</button>
+    </div>
     <div class="two-col">
       <div>
         <div class="label">生词本</div>
         <div class="wlist" id="w-list"></div>
-        <input type="text" id="w-add" placeholder="查新词" style="margin-top:10px;font-size:13px;padding:8px 10px">
       </div>
       <div id="w-detail"></div>
     </div>
@@ -76,7 +82,11 @@
       <div class="en" id="s-sentence" style="font-size:18px;line-height:1.7;margin-bottom:8px"></div>
       <div class="muted" id="s-tags" style="margin-bottom:18px"></div>
       <div class="card" id="s-analysis" style="font-size:14px;line-height:1.75;color:var(--text-2)"></div>
-      <input type="text" id="s-more" placeholder="还有什么不解？" style="margin:14px 0 12px">
+      <div id="s-thread"></div>
+      <div class="inrow" style="margin:14px 0 12px">
+        <input type="text" id="s-more" placeholder="还有什么不解？">
+        <button class="pill acc" id="s-more-send">追问</button>
+      </div>
       <div class="row">
         <button class="pill acc" id="s-save">存为笔记</button>
         <button class="pill" id="s-review">复习过往笔记</button>
@@ -99,7 +109,10 @@
       </div>
     </div>
     <div class="bubbles en" id="c-bubbles"></div>
-    <input type="text" id="c-input" placeholder="你想聊什么？">
+    <div class="inrow">
+      <input type="text" id="c-input" placeholder="你想聊什么？">
+      <button class="pill acc" id="c-send">发送</button>
+    </div>
     <div class="row" style="margin-top:12px">
       <button class="pill" id="c-save">总结存档</button>
       <span class="hint">选中任意英文词可查词典</span>

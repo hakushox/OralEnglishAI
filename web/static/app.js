@@ -252,13 +252,28 @@ $('#p-why').addEventListener('click', () => {
   askWhy('/api/practice/why', { draft: state.draft, revised: state.revised });
 });
 
-$('#p-why-input').addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter') return;
-  const question = e.target.value.trim();
-  if (!question) return;
-  e.target.value = '';
-  askWhy('/api/practice/why/followup', { question });
-});
+/* 输入框统一走这个：键盘和按钮两条路都要有，不能只留快捷键。
+   单行 input 用回车提交；textarea 里回车是换行，改用 ⌘/Ctrl + 回车。 */
+function bindSend(inputSel, buttonSel, handler) {
+  const input = $(inputSel);
+  const multiline = input.tagName === 'TEXTAREA';
+  const fire = () => {
+    const value = input.value.trim();
+    if (!value) return;
+    input.value = '';
+    handler(value);
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    if (multiline && !(e.metaKey || e.ctrlKey)) return;
+    e.preventDefault();
+    fire();
+  });
+  $(buttonSel).addEventListener('click', fire);
+}
+
+bindSend('#p-why-input', '#p-why-send',
+  (question) => askWhy('/api/practice/why/followup', { question }));
 
 $('#p-save-note').addEventListener('click', async (e) => {
   const r = await (await fetch('/api/practice/save-note', {
@@ -352,6 +367,7 @@ async function loadWords() {
 }
 
 async function showWord(word) {
+  $('#w-detail').innerHTML = '<div class="hint">查询中…</div>';
   const d = await (await fetch('/api/words/' + encodeURIComponent(word))).json();
   $('#w-detail').innerHTML = `
     <div class="row" style="align-items:baseline;gap:12px;margin-bottom:14px">
@@ -374,12 +390,15 @@ async function showWord(word) {
     encodeURIComponent(d.word), '_blank'));
 }
 
+bindSend('#w-add', '#w-go', (word) => {
+  $$('#w-list button').forEach((x) => x.classList.remove('on'));
+  showWord(word);
+});
+
 /* ==================== 长难句 ==================== */
-$('#s-go').addEventListener('click', async () => {
-  const sentence = $('#s-input').value.trim();
-  if (!sentence) return;
-  $('#s-input').value = '';
+async function analyzeSentence(sentence) {
   $('#s-result').style.display = 'block';
+  $('#s-thread').innerHTML = '';        // 换新句子时清掉上一轮的追问
   $('#s-sentence').textContent = sentence;
   $('#s-tags').textContent = '分析中…';
   const a = $('#s-analysis');
@@ -390,6 +409,24 @@ $('#s-go').addEventListener('click', async () => {
     if (m.delta) a.textContent += m.delta;
   });
   a.classList.remove('caret');
+}
+
+bindSend('#s-input', '#s-go', analyzeSentence);
+
+// 追问不能复用 analyzeSentence —— 那个会把标题栏的句子换成问题本身。
+// 追问是在原分析下面接着聊，原句必须留在上面。
+bindSend('#s-more', '#s-more-send', async (question) => {
+  const box = $('#s-thread');
+  box.insertAdjacentHTML('beforeend',
+    `<div class="card"><div class="label">${esc(question)}</div><div class="md caret"></div></div>`);
+  const body = box.lastElementChild.querySelector('.md');
+  let raw = '';
+  await stream('/api/parse', { sentence: question, followup: true }, (m) => {
+    if (m.delta) { raw += m.delta; body.textContent = raw; }
+    if (m.warn || m.error) msg(m.warn || m.error);
+  });
+  body.classList.remove('caret');
+  if (raw.trim()) body.innerHTML = mdToHtml(raw);
 });
 $('#s-save').addEventListener('click', (e) => { e.target.textContent = '已存为笔记'; e.target.disabled = true; });
 
@@ -401,11 +438,7 @@ $$('#c-mode button').forEach((b) => b.addEventListener('click', () => {
   chatMode = b.dataset.mode;
 }));
 
-$('#c-input').addEventListener('keydown', async (e) => {
-  if (e.key !== 'Enter') return;
-  const msg = e.target.value.trim();
-  if (!msg) return;
-  e.target.value = '';
+bindSend('#c-input', '#c-send', async (msg) => {
   const box = $('#c-bubbles');
   box.insertAdjacentHTML('beforeend', `<div class="b-user"><span>${esc(msg)}</span></div>`);
   const deep = chatMode === 'deep';
