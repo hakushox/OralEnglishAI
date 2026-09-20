@@ -10,3 +10,4 @@ API_KEY.py
 test.py
 .vscode
 tempCodeRunnerFile.py
+.claude/settings.local.json
