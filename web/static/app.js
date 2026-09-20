@@ -54,6 +54,35 @@ function diffWords(a, b) {
 
 const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
+/* ========== 极简 markdown 渲染 ==========
+   模型回答里只会出现标题、加粗、行内代码、无序列表这几种，
+   够用就行，不值得为此引一个 CDN 依赖（这是本地程序，应当断网也能开界面）。
+   嵌套列表会被拍平成一层，可以接受。 */
+function mdToHtml(src) {
+  const inline = (s) => s
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')          // 必须先于斜体，否则 ** 会被拆成两个斜体
+    .replace(/\*([^*\n]+)\*/g, '<i>$1</i>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+  let html = '', inList = false;
+  for (const raw of esc(src).split('\n')) {
+    const line = raw.trim();
+    const li = line.match(/^[*\-+]\s+(.*)$/);
+    if (li) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += `<li>${inline(li[1])}</li>`;
+      continue;
+    }
+    if (inList) { html += '</ul>'; inList = false; }
+    if (!line) continue;
+    const h = line.match(/^#{1,4}\s+(.*)$/);
+    const q = line.match(/^&gt;\s*(.*)$/);           // esc() 已经把 > 转成了 &gt;
+    if (h) html += `<div class="md-h">${inline(h[1])}</div>`;
+    else if (q) html += `<blockquote>${inline(q[1])}</blockquote>`;
+    else html += `<p>${inline(line)}</p>`;
+  }
+  return inList ? html + '</ul>' : html;
+}
+
 const wrapWords = (words) =>
   words.map((w) => `<span class="w">${esc(w)}</span>`).join(' ');
 
@@ -83,22 +112,62 @@ function renderDiff(draft, revised) {
   $('#p-revised').innerHTML = rh;
 }
 
-/* ========== 跟读高亮（骨架阶段用假时长） ========== */
+/* ========== 语音播放 + 跟读高亮 ========== */
 let litTimers = [];
-function playHighlight(el) {
+let curAudio = null;
+const ttsCache = new Map();   // 同一句重复播不重新合成
+
+function clearLit(el) {
   litTimers.forEach(clearTimeout);
   litTimers = [];
+  $$('.w', el).forEach((w) => w.classList.remove('lit'));
+}
+
+async function speak(el, text, btn) {
+  if (!text || !text.trim()) return;
+  if (curAudio) { curAudio.pause(); curAudio = null; }
+  clearLit(el);
+
+  let data = ttsCache.get(text);
+  if (!data) {
+    const label = btn.textContent;
+    btn.textContent = '合成中…';
+    btn.disabled = true;
+    try {
+      data = await (await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      })).json();
+    } finally {
+      btn.textContent = label;
+      btn.disabled = false;
+    }
+    if (!data.ok) { msg(data.msg || '语音合成失败'); return; }
+    ttsCache.set(text, data);
+  }
+
+  const audio = new Audio('data:audio/mpeg;base64,' + data.audio);
+  curAudio = audio;
+
+  // 用 edge-tts 的 WordBoundary 时间戳对齐高亮，不再是假定时器
   const words = $$('.w', el);
-  words.forEach((w) => w.classList.remove('lit'));
-  words.forEach((w, idx) => {
+  const n = Math.min(words.length, data.marks.length);
+  for (let i = 0; i < n; i++) {
     litTimers.push(setTimeout(() => {
       words.forEach((x) => x.classList.remove('lit'));
-      w.classList.add('lit');
-    }, idx * 230));
-  });
-  litTimers.push(setTimeout(() => {
-    words.forEach((x) => x.classList.remove('lit'));
-  }, words.length * 230 + 300));
+      words[i].classList.add('lit');
+    }, data.marks[i].offset_ms));
+  }
+  audio.addEventListener('ended', () => clearLit(el));
+  audio.play().catch(() => msg('播放被浏览器拦截了，点一下页面再试'));
+}
+
+function msg(text) {
+  const box = $('#p-msg');
+  if (!box) return;
+  box.textContent = text;
+  if (text) setTimeout(() => { if (box.textContent === text) box.textContent = ''; }, 4000);
 }
 
 /* ========== 导航 ========== */
@@ -130,32 +199,73 @@ async function correct() {
   rev.textContent = '';
   rev.classList.add('caret');
 
+  msg('');
+  $('#p-save').textContent = '存档';
+  $('#p-save').disabled = false;
+
   await stream('/api/practice/correct', { text }, (m) => {
     if (m.delta) { state.revised += m.delta; rev.textContent = state.revised; }
+    if (m.source) $('#p-src').textContent = m.source;
+    if (m.warn || m.error) msg(m.warn || m.error);
   });
   rev.classList.remove('caret');
-  renderDiff(state.draft, state.revised);
+  if (state.revised.trim()) renderDiff(state.draft, state.revised);
 }
 
 $('#p-go').addEventListener('click', correct);
 $('#p-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) correct();
 });
-$('#p-play-draft').addEventListener('click', () => playHighlight($('#p-draft')));
-$('#p-play-rev').addEventListener('click', () => playHighlight($('#p-revised')));
-$('#p-save').addEventListener('click', (e) => {
-  e.target.textContent = '已存档';
-  e.target.disabled = true;
+$('#p-play-draft').addEventListener('click', (e) => speak($('#p-draft'), state.draft, e.target));
+$('#p-play-rev').addEventListener('click', (e) => speak($('#p-revised'), state.revised, e.target));
+
+$('#p-save').addEventListener('click', async (e) => {
+  const r = await (await fetch('/api/practice/save', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ draft: state.draft, revised: state.revised }),
+  })).json();
+  if (r.ok) {
+    e.target.textContent = `已存档 · 共 ${r.total} 条`;
+    e.target.disabled = true;
+  } else {
+    msg(r.msg || '存档失败');
+  }
 });
 
-$('#p-why').addEventListener('click', async () => {
-  const box = $('#p-why-box'), t = $('#p-why-text');
-  box.style.display = 'block';
+async function askWhy(url, body) {
+  const t = $('#p-why-text');
+  let raw = '';
   t.textContent = '';
   t.classList.add('caret');
-  await stream('/api/practice/why', { draft: state.draft, revised: state.revised },
-    (m) => { if (m.delta) t.textContent += m.delta; });
+  // 流式阶段先按纯文本追加 —— markdown 语法是跨行的，边收边渲染会一直闪烂格式
+  await stream(url, body, (m) => {
+    if (m.delta) { raw += m.delta; t.textContent = raw; }
+    if (m.warn || m.error) msg(m.warn || m.error);
+  });
   t.classList.remove('caret');
+  if (raw.trim()) t.innerHTML = mdToHtml(raw);
+  $('#p-save-note').style.display = 'inline-flex';
+}
+
+$('#p-why').addEventListener('click', () => {
+  $('#p-why-box').style.display = 'block';
+  askWhy('/api/practice/why', { draft: state.draft, revised: state.revised });
+});
+
+$('#p-why-input').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const question = e.target.value.trim();
+  if (!question) return;
+  e.target.value = '';
+  askWhy('/api/practice/why/followup', { question });
+});
+
+$('#p-save-note').addEventListener('click', async (e) => {
+  const r = await (await fetch('/api/practice/save-note', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ revised: state.revised }),
+  })).json();
+  msg(r.ok ? '分析已挂到这条记录上' : (r.msg || '保存失败'));
 });
 
 /* ========== 录音 + 实时波形 ========== */
