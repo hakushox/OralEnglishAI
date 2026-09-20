@@ -17,47 +17,71 @@
     <button data-view="archive" class="spacer">档案 <span id="arc-count">—</span></button>
   </nav>
 
-  <!-- ==================== 练习 ==================== -->
+  <!-- ==================== 练习 ====================
+       递进式：data-stage 控制当前阶段，前一阶段的内容缩小变暗退到顶部当上下文，
+       不是直接消失 —— 用户随时能抬眼看原句。显隐规则全在 style.css 的属性选择器里。 -->
   <section class="view on" id="v-practice">
-    <div id="p-result" style="display:none">
-      <div class="label">你说的</div>
-      <div class="draft en" id="p-draft"></div>
-      <div class="label acc">地道版</div>
-      <div class="revised en" id="p-revised"></div>
-      <div class="row" style="margin-bottom:6px">
-        <button class="pill" id="p-play-draft">▶ 原句</button>
-        <button class="pill acc" id="p-play-rev">▶ 地道版</button>
-        <button class="pill ghost" id="p-why">为什么这么改</button>
-        <button class="pill ghost" id="p-save" style="margin-left:auto">存档</button>
+    <div class="stage" id="p-stage" data-stage="1">
+
+      <button class="stage-x" id="p-reset" aria-label="清空重来" title="清空重来">✕</button>
+
+      <!-- ① 输入 -->
+      <div class="st1">
+        <textarea id="p-input" rows="3" placeholder="写一句英文，或者点下面的麦克风直接说"></textarea>
+        <div class="row" style="margin-top:12px">
+          <button class="pill acc" id="p-go">改一改</button>
+          <span class="hint">⌘ + Enter 提交</span>
+        </div>
       </div>
-      <div class="row" style="margin-bottom:6px;justify-content:space-between">
-        <span class="hint" id="p-msg"></span>
-        <span class="hint" id="p-src"></span>
+
+      <!-- ②③④ 句子区（进入解析后缩小退场） -->
+      <div class="st2up sent">
+        <div class="label">你说的</div>
+        <div class="line">
+          <span class="draft en" id="p-draft"></span>
+          <button class="ico" id="p-play-draft" aria-label="朗读原句">🔊</button>
+        </div>
+        <div class="label acc">地道版</div>
+        <div class="line">
+          <span class="revised en" id="p-revised"></span>
+          <button class="ico" id="p-play-rev" aria-label="朗读地道版">🔊</button>
+        </div>
       </div>
-      <div id="p-why-box" style="display:none;margin-top:16px">
+
+      <!-- ② 唯一主行动 -->
+      <div class="st2 row" style="margin-top:24px">
+        <button class="pill acc big" id="p-why">为什么这么改</button>
+        <button class="pill" id="p-save">存档</button>
+      </div>
+
+      <!-- ③ 解析（主角） -->
+      <div class="st3 slide-up">
         <div class="card" id="p-why-text"></div>
-        <div class="inrow" style="margin-top:10px">
+        <div class="row" style="margin-top:10px">
+          <button class="pill" id="p-save-note">把这段分析存进记录</button>
+        </div>
+      </div>
+
+      <!-- ④ 追问：解析流完之后才滑进来，这个动作本身就是「你可以继续问」的提示 -->
+      <div class="st4 slide-up" style="margin-top:14px">
+        <div class="inrow">
           <input type="text" id="p-why-input" placeholder="还有什么不解？">
           <button class="pill acc" id="p-why-send">追问</button>
         </div>
-        <div class="row" style="margin-top:10px">
-          <button class="pill" id="p-save-note" style="display:none">把这段分析存进记录</button>
-        </div>
       </div>
-    </div>
 
-    <div id="p-input-box">
-      <textarea id="p-input" rows="3" placeholder="写一句英文，或者点麦克风直接说"></textarea>
-      <div class="row" style="margin-top:12px">
-        <button class="pill acc" id="p-go">改一改</button>
-        <span class="hint">⌘ + Enter 提交</span>
+      <div class="row" style="margin-top:10px;justify-content:space-between">
+        <span class="hint" id="p-msg"></span>
+        <span class="hint" id="p-src"></span>
       </div>
-    </div>
 
-    <div class="recbar">
-      <button class="mic" id="p-mic" aria-label="开始录音">●</button>
-      <div class="wave" id="p-wave"></div>
-      <span class="muted" id="p-recstate" style="margin-left:auto">点麦克风开始说</span>
+      <!-- 录音：①展开成波形条，②③④收成一个麦克风圆钮 -->
+      <div class="recbar" id="p-recbar">
+        <button class="mic" id="p-mic" aria-label="开始录音">●</button>
+        <div class="wave" id="p-wave"></div>
+        <span class="muted" id="p-recstate" style="margin-left:auto">点麦克风开始说</span>
+      </div>
+
     </div>
   </section>
 

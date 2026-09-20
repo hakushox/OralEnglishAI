@@ -186,14 +186,44 @@ $$('.nav button').forEach((b) => {
 /* ==================== 练习 ==================== */
 let state = { draft: '', revised: '' };
 
+/* 递进式阶段：① 输入 → ② 改写 → ③ 解析 → ④ 追问
+   显隐和尺寸全由 CSS 的 [data-stage] 规则管，这里只负责改这一个属性。 */
+function setStage(n) {
+  const stage = $('#p-stage');
+  if (stage.dataset.stage === String(n)) return;
+  stage.dataset.stage = String(n);
+  // 重新触发滑入动画：光改 data-stage 不会让已经播过的 animation 再跑一次
+  $$('.slide-up', stage).forEach((el) => {
+    el.style.animation = 'none';
+    void el.offsetWidth;
+    el.style.animation = '';
+  });
+}
+
+function resetStage() {
+  if (curAudio) { curAudio.pause(); curAudio = null; }
+  state = { draft: '', revised: '' };
+  $('#p-input').value = '';
+  $('#p-draft').innerHTML = '';
+  $('#p-revised').innerHTML = '';
+  $('#p-why-text').innerHTML = '';
+  $('#p-src').textContent = '';
+  msg('');
+  $('#p-save').textContent = '存档';
+  $('#p-save').disabled = false;
+  setStage(1);
+  $('#p-input').focus();
+}
+
+$('#p-reset').addEventListener('click', resetStage);
+
 async function correct() {
   const text = $('#p-input').value.trim();
   if (!text) return;
   state.draft = text;
   state.revised = '';
   $('#p-input').value = '';
-  $('#p-result').style.display = 'block';
-  $('#p-why-box').style.display = 'none';
+  setStage(2);
   $('#p-draft').textContent = text;
   const rev = $('#p-revised');
   rev.textContent = '';
@@ -244,11 +274,13 @@ async function askWhy(url, body) {
   });
   t.classList.remove('caret');
   if (raw.trim()) t.innerHTML = mdToHtml(raw);
-  $('#p-save-note').style.display = 'inline-flex';
+  // 解析读完之后追问框才滑进来 —— 这个出现动作本身就是「可以继续问」的提示，
+  // 一直摆在那儿的输入框是背景板，没人会注意。
+  setStage(4);
 }
 
 $('#p-why').addEventListener('click', () => {
-  $('#p-why-box').style.display = 'block';
+  setStage(3);
   askWhy('/api/practice/why', { draft: state.draft, revised: state.revised });
 });
 
@@ -302,6 +334,7 @@ function drawBars(values) {
 async function startRec() {
   rec.on = true;
   $('#p-mic').classList.add('rec');
+  $('#p-recbar').classList.add('recording');   // 折叠态下也要把波形放出来
   $('#p-recstate').textContent = '录音中 · 再点一次结束';
   try {
     rec.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -338,6 +371,10 @@ function stopRec() {
   fetch('/api/practice/transcribe', { method: 'POST' })
     .then((r) => r.json())
     .then((d) => {
+      // 回阶段①把转写结果填进输入框，让用户先改再提交 ——
+      // 跟终端版 edit_text() 一个道理，语音识别总有错，不该直接送去纠正。
+      setStage(1);
+      $('#p-recbar').classList.remove('recording');
       $('#p-input').value = d.text;
       $('#p-recstate').textContent = '转写完成，可改后提交';
     });

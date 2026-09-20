@@ -128,10 +128,46 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 .md-h { color: var(--text); font-size: 14px; margin: 12px 0 7px; }
 .md-h:first-child { margin-top: 0; }
 
-/* ============ 练习：diff 展示 ============ */
+/* ============ 练习：递进式阶段 ============
+   核心机制：容器上一个 data-stage，靠属性选择器控制各段的显隐和尺寸。
+   句子区进入解析阶段后是「缩小退场」而不是消失 —— 用户随时能抬眼看原句，
+   这是递进和翻页的区别。所有尺寸变化都走 transition，不要用 display 硬切。 */
+
+.stage { position: relative; padding-top: 4px; }
+
+.stage-x {
+  position: absolute; top: -4px; right: 0; z-index: 2;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-5); font-size: 16px; line-height: 1; padding: 6px;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s var(--ease), color 0.15s var(--ease);
+}
+.stage-x:hover { color: var(--text-2); }
+.stage:not([data-stage="1"]) .stage-x { opacity: 1; pointer-events: auto; }
+
+/* 各阶段该显示谁 */
+.stage[data-stage="1"] .st2up,
+.stage[data-stage="1"] .st2,
+.stage[data-stage="1"] .st3,
+.stage[data-stage="1"] .st4,
+.stage[data-stage="2"] .st1,
+.stage[data-stage="2"] .st3,
+.stage[data-stage="2"] .st4,
+.stage[data-stage="3"] .st1,
+.stage[data-stage="3"] .st2,
+.stage[data-stage="3"] .st4,
+.stage[data-stage="4"] .st1,
+.stage[data-stage="4"] .st2 { display: none; }
+
+.slide-up { animation: slideup 0.5s var(--ease) both; }
+@keyframes slideup { from { opacity: 0; transform: translateY(14px); } }
+
+/* ============ 句子区 ============ */
+.sent { transition: margin 0.45s var(--ease), padding 0.45s var(--ease); }
+.line { display: block; margin-bottom: 18px; }
+
 .draft {
-  font-size: 17px; line-height: 1.6;
-  color: var(--text-3); margin-bottom: 24px; min-height: 27px;
+  font-size: 17px; line-height: 1.6; color: var(--text-3);
+  transition: font-size 0.45s var(--ease), opacity 0.45s var(--ease);
 }
 .draft .del {
   color: var(--del); text-decoration: line-through;
@@ -140,18 +176,37 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 @keyframes strike { from { color: var(--text-3); text-decoration-color: transparent; } }
 
 .revised {
-  font-size: 24px; line-height: 1.5;
-  color: var(--text); margin-bottom: 22px; min-height: 36px;
+  font-size: 24px; line-height: 1.5; color: var(--text);
+  transition: font-size 0.45s var(--ease), opacity 0.45s var(--ease);
 }
-.revised .grp {
-  display: inline-block;
-  animation: slidein 0.4s var(--ease) both;
-}
+.revised .grp { display: inline-block; animation: slidein 0.4s var(--ease) both; }
 .revised .ins {
   background: var(--accent-bg); color: var(--accent-text);
   border-radius: 4px; padding: 1px 6px;
 }
 @keyframes slidein { from { opacity: 0; transform: translateY(7px); } }
+
+/* 进入解析后：句子缩小变暗，沉到顶部当上下文 */
+.stage[data-stage="3"] .draft, .stage[data-stage="4"] .draft { font-size: 13px; opacity: 0.5; }
+.stage[data-stage="3"] .revised, .stage[data-stage="4"] .revised { font-size: 16px; opacity: 0.65; }
+.stage[data-stage="3"] .line, .stage[data-stage="4"] .line { margin-bottom: 8px; }
+.stage[data-stage="3"] .label, .stage[data-stage="4"] .label {
+  opacity: 0; height: 0; margin: 0; overflow: hidden;
+}
+.stage[data-stage="3"] .sent, .stage[data-stage="4"] .sent {
+  margin-bottom: 20px; padding-bottom: 16px; border-bottom: 0.5px solid var(--border);
+}
+
+/* 行内朗读小图标：贴在句尾，不单独占行抢主行动的位置 */
+.ico {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-5); font-size: 13px; padding: 0 5px;
+  opacity: 0.55; transition: opacity 0.15s var(--ease), transform 0.15s var(--ease);
+}
+.ico:hover { opacity: 1; transform: scale(1.15); }
+.ico[disabled] { opacity: 0.25; cursor: default; }
+
+.pill.big { font-size: 15px; padding: 11px 22px; }
 
 .w { display: inline-block; border-radius: 3px; transition: background 0.12s linear; }
 .w.lit { background: var(--accent); color: var(--accent-on); }
@@ -175,6 +230,13 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 .mic.rec { background: var(--accent); color: var(--accent-on); }
 
 .wave { display: flex; align-items: center; gap: 3px; height: 34px; }
+
+/* 阶段①录音条完整展开；②③④收成一个麦克风圆钮 —— 这是口语 app，
+   语音入口任何时候都该在手边，打字才需要先点 ✕ 回到阶段①。
+   但录音进行中波形必须显示，所以 .recording 优先级要压过折叠规则。 */
+.stage:not([data-stage="1"]) .recbar { border-top: none; padding-top: 10px; margin-top: 18px; }
+.stage:not([data-stage="1"]) .recbar:not(.recording) .wave,
+.stage:not([data-stage="1"]) .recbar:not(.recording) #p-recstate { display: none; }
 .wave i {
   width: 3px; height: 3px; background: var(--accent-dim);
   border-radius: 2px; transition: height 0.08s linear, background 0.15s linear;
