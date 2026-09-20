@@ -261,7 +261,7 @@ PROVIDERS = [
             {
         'name': 'groq',
         'client': OpenAI(api_key=GROQ_API_KEY, base_url='https://api.groq.com/openai/v1'),
-        'models': ['qwen/qwen3.6-27b','openai/gpt-oss-120b']
+        'models': ['qwen/qwen3.8-27b','openai/gpt-oss-120b']
     },
             {
         'name': 'cloudflare',
