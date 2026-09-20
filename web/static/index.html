@@ -47,12 +47,14 @@
         <div class="line">
           <span class="revised en" id="p-revised"></span>
           <button class="ico" id="p-play-rev" aria-label="朗读地道版">🔊</button>
-          <button class="bookmark" id="p-save" aria-label="存进档案" title="存进档案">🔖</button>
         </div>
       </div>
 
-      <!-- ② 下一步是邀请，不是按钮 -->
-      <button class="invite st2" id="p-why">想知道为什么这么改<span class="chev">⌄</span></button>
+      <!-- ② 下一步是邀请；存档是并列的次要动作，有标签、位置固定 -->
+      <div class="st2 row">
+        <button class="invite" id="p-why">想知道为什么这么改<span class="chev">⌄</span></button>
+        <button class="pill" id="p-save" style="margin-left:auto">存进档案</button>
+      </div>
 
       <!-- ③④ 解析线索：每轮一条，旧的折叠成一行，随时能翻回去 -->
       <div class="st3 thread" id="p-thread"></div>
@@ -67,7 +69,11 @@
           </div>
           <button class="pill acc" id="p-why-send">追问</button>
         </div>
-        <button class="invite subtle" id="p-again">换一句继续练<span class="chev">⌄</span></button>
+        <!-- 保存整段讨论：固定在线索末尾，不再是每轮角上一个小图标 -->
+        <div class="row" style="margin-top:14px">
+          <button class="pill acc big" id="p-save-note">总结这段讨论，存进记录</button>
+          <button class="invite subtle" id="p-again" style="margin-left:auto">换一句继续练<span class="chev">⌄</span></button>
+        </div>
       </div>
 
       <div class="row" style="margin-top:6px;justify-content:space-between">

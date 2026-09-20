@@ -232,8 +232,10 @@ function resetStage() {
   $('#p-thread').innerHTML = '';
   $('#p-src').textContent = '';
   msg('');
-  $('#p-save').textContent = '存档';
+  $('#p-save').textContent = '存进档案';
   $('#p-save').disabled = false;
+  $('#p-save-note').textContent = '总结这段讨论，存进记录';
+  $('#p-save-note').disabled = false;
   setStage(1);
   $('#p-input').focus();
 }
@@ -246,18 +248,16 @@ async function correct() {
   state.revised = '';
   $('#p-input').value = '';
   setStage(2);
-  const bm = $('#p-save');
-  bm.classList.remove('saved');
-  bm.classList.remove('appear');
-  bm.title = '存进档案';
   $('#p-draft').textContent = text;
   const rev = $('#p-revised');
   rev.textContent = '';
   rev.classList.add('caret');
 
   msg('');
-  $('#p-save').textContent = '存档';
+  $('#p-save').textContent = '存进档案';
   $('#p-save').disabled = false;
+  $('#p-save-note').textContent = '总结这段讨论，存进记录';
+  $('#p-save-note').disabled = false;
 
   await stream('/api/practice/correct', { text }, (m) => {
     if (m.delta) { state.revised += m.delta; rev.textContent = state.revised; }
@@ -265,10 +265,7 @@ async function correct() {
     if (m.warn || m.error) msg(m.warn || m.error);
   });
   rev.classList.remove('caret');
-  if (state.revised.trim()) {
-    renderDiff(state.draft, state.revised);
-    $('#p-save').classList.add('appear');   // 改写完成，存档书签才浮现
-  }
+  if (state.revised.trim()) renderDiff(state.draft, state.revised);
 }
 
 $('#p-go').addEventListener('click', correct);
@@ -284,8 +281,8 @@ $('#p-save').addEventListener('click', async (e) => {
     body: JSON.stringify({ draft: state.draft, revised: state.revised }),
   })).json();
   if (r.ok) {
-    e.target.classList.add('saved');
-    e.target.title = `已存档 · 共 ${r.total} 条`;
+    e.target.textContent = `✓ 已存档 · 共 ${r.total} 条`;
+    e.target.disabled = true;
     $('#arc-count').textContent = r.total;
   } else {
     msg(r.msg || '存档失败');
@@ -303,10 +300,7 @@ function addRound(title) {
   el.className = 'round open';
   el.innerHTML = `
     <button class="round-head"><span>${esc(title)}</span><span class="chev">⌄</span></button>
-    <div class="round-body">
-      <button class="bookmark" aria-label="把这段分析存进记录" title="把这段分析存进记录">🔖</button>
-      <div class="card md"></div>
-    </div>`;
+    <div class="round-body"><div class="card md"></div></div>`;
   thread.appendChild(el);
 
   $('.round-head', el).addEventListener('click', () => {
@@ -330,24 +324,26 @@ async function askWhy(url, body, title) {
   md.classList.remove('caret');
   if (raw.trim()) md.innerHTML = mdToHtml(raw);
 
-  const bm = $('.bookmark', round);
-  bm.classList.add('appear');            // 滑入 + 脉动两下，这个动作本身就是"可以存"的提示
-  bm.addEventListener('click', () => saveNote(bm));
-
-  setStage(4);                           // 读完了，追问框才滑进来
+  setStage(4);                           // 读完了，追问框和保存按钮才一起滑进来
 }
 
-async function saveNote(btn) {
+$('#p-save-note').addEventListener('click', async (e) => {
+  const btn = e.target;
+  const label = btn.textContent;
+  btn.textContent = '正在总结…';
+  btn.disabled = true;
   const r = await (await fetch('/api/practice/save-note', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ revised: state.revised }),
   })).json();
   if (r.ok) {
-    btn.classList.add('saved');
-    btn.title = r.summarized ? '已把整段讨论总结后存进记录' : '已存进记录';
-    msg(r.summarized ? '聊了好几轮，已总结成一条笔记存进记录' : '已存进记录');
-  } else msg(r.msg || '保存失败');
-}
+    btn.textContent = r.summarized ? '✓ 已总结并存进记录' : '✓ 已存进记录';
+  } else {
+    btn.textContent = label;
+    btn.disabled = false;
+    msg(r.msg || '保存失败');
+  }
+});
 
 $('#p-why').addEventListener('click', () => {
   setStage(3);

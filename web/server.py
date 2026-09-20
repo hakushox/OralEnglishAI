@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 import review
 
-from web import engine, store, tts
+from web import engine, prompts, store, tts
 
 STATIC_DIR = Path(__file__).parent / 'static'
 
@@ -97,13 +97,19 @@ def why_followup(payload: dict = Body(...)):
     if not _why_thread:
         return ndjson(iter([{'error': '（还没有开始分析，先点「为什么这么改」）'}]))
 
+    # 追加约束，避免模型每轮都把第一轮那套三段式分析重跑一遍。
+    # 存进 thread 的是原问题，发给模型的才带约束 —— 否则约束会污染后续上下文，
+    # 也会让「总结存档」把这段指令当成用户说的话。
     _why_thread.append({'role': 'user', 'content': question})
+    messages = _why_thread[:-1] + [
+        {'role': 'user', 'content': question + prompts.FOLLOWUP_GUARD}
+    ]
 
     def remember(full):
         if full:
             _why_thread.append({'role': 'assistant', 'content': full})
 
-    return ndjson(engine.stream_answer(_why_thread, temperature=0.3), remember)
+    return ndjson(engine.stream_answer(messages, temperature=0.3), remember)
 
 
 @app.post('/api/practice/save')

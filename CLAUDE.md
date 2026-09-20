@@ -127,6 +127,13 @@ Linux 是 `~/.config`）。里面是 `Oral_English_Exercise.json`（造句记录
 **prompt 放哪**：`review.py` 里已有的直接 import 复用。新加的写进 `web/prompts.py`，
 命名跟着现有的来（`XXX_SYSTEM_PROMPT`）。
 
+**一次性任务的 prompt 拿去做多轮对话，一定要加追问约束。**
+终端版的 prompt（`CORRECTION_SYSTEM_PROMPT` 等）都写死了输出结构，
+多轮时每轮都生效，模型会把第一轮那套格式反复重跑而不是回答追问，
+越往后越像上一轮的复制品。做法见 `web/prompts.py:FOLLOWUP_GUARD`：
+约束只拼进**发给模型的那一份** messages，存进 thread 的仍是用户原话 ——
+否则约束会污染后续上下文，"总结存档"也会把这段指令当成用户说的话。
+
 注意 `CORRECTION_SYSTEM_PROMPT` 和 `CORRECT_SINGLE_SYSTEM_PROMPT` 写在 `edgetts.py`
 （235、269 行），而 `edgetts.py` 不能 import —— 只能复制一份到 `web/prompts.py` 并注明来源行号。
 这两处以后要手动同步，是不动老文件必须付的账。
