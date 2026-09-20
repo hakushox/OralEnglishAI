@@ -342,8 +342,11 @@ async function saveNote(btn) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ revised: state.revised }),
   })).json();
-  if (r.ok) { btn.classList.add('saved'); btn.title = '已存进记录'; }
-  else msg(r.msg || '保存失败');
+  if (r.ok) {
+    btn.classList.add('saved');
+    btn.title = r.summarized ? '已把整段讨论总结后存进记录' : '已存进记录';
+    msg(r.summarized ? '聊了好几轮，已总结成一条笔记存进记录' : '已存进记录');
+  } else msg(r.msg || '保存失败');
 }
 
 $('#p-why').addEventListener('click', () => {
@@ -524,6 +527,17 @@ bindSend('#s-more', '#s-more-send', async (question) => {
 });
 $('#s-save').addEventListener('click', (e) => { e.target.textContent = '已存为笔记'; e.target.disabled = true; });
 
+/* 这两个依赖的模块还是 MOCK，先给一句明确说明 ——
+   点了毫无反应是最糟的，用户分不清是坏了还是没做。 */
+const notReady = (sel, what) => $(sel).addEventListener('click', (e) => {
+  const old = e.target.textContent;
+  e.target.textContent = `${what}还没接真实逻辑`;
+  e.target.disabled = true;
+  setTimeout(() => { e.target.textContent = old; e.target.disabled = false; }, 2200);
+});
+notReady('#s-review', '长难句笔记复习');
+notReady('#c-save', '对话总结存档');
+
 /* ==================== 随便问 ==================== */
 let chatMode = 'local';
 $$('#c-mode button').forEach((b) => b.addEventListener('click', () => {
@@ -558,6 +572,21 @@ async function loadArchive(filter) {
       ${it.note ? `<div class="arc-note">${esc(it.note)}</div>` : ''}
     </div>`).join('');
 }
+$('#a-analyze').addEventListener('click', async (e) => {
+  const box = $('#a-report');
+  box.innerHTML = '<div class="card md caret"></div>';
+  const md = $('.md', box);
+  e.target.disabled = true;
+  let raw = '';
+  await stream('/api/archive/analyze', {}, (m) => {
+    if (m.delta) { raw += m.delta; md.textContent = raw; }
+    if (m.error) md.textContent = m.error;
+  });
+  md.classList.remove('caret');
+  if (raw.trim()) md.innerHTML = mdToHtml(raw);
+  e.target.disabled = false;
+});
+
 $$('[data-filter]').forEach((b) => b.addEventListener('click', () => {
   $$('[data-filter]').forEach((x) => x.classList.remove('acc'));
   b.classList.add('acc');

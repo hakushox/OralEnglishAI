@@ -185,6 +185,16 @@ def stream_correction(text):
     )
 
 
+def collect(events):
+    """把事件流抽干、拼成完整字符串。
+
+    用在「先总结再存档」这类不需要流式展示、只要最终结果的场景。
+    没有正文就返回 None，让调用方自己决定兜底。
+    """
+    parts = [e['delta'] for e in events if e.get('delta')]
+    return ''.join(parts) if parts else None
+
+
 def build_why_messages(draft, revised):
     """开一条「为什么这么改」的独立对话线索，对应终端版的 ask_why_fixed_thread()"""
     import json

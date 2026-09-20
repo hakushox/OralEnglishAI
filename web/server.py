@@ -16,6 +16,8 @@ from fastapi import Body, FastAPI
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+import review
+
 from web import engine, store, tts
 
 STATIC_DIR = Path(__file__).parent / 'static'
@@ -116,13 +118,27 @@ async def save(payload: dict = Body(...)):
 
 @app.post('/api/practice/save-note')
 async def save_note(payload: dict = Body(...)):
-    """把「为什么这么改」的最后一轮回答挂到对应记录上"""
+    """把「为什么这么改」的讨论挂到对应记录上。
+
+    聊得多了就先总结再存 —— 对齐终端版 edgetts.py:944 的做法：
+    追问超过两轮时，整段讨论压成 80 字的笔记，而不是只留最后一条回复
+    （否则前面问出来的东西全丢了）。
+    """
     revised = (payload.get('revised') or '').strip()
-    notes = [m['content'] for m in _why_thread if m['role'] == 'assistant']
-    if not revised or not notes:
+    answers = [m['content'] for m in _why_thread if m['role'] == 'assistant']
+    if not revised or not answers:
         return {'ok': False, 'msg': '没有可保存的分析'}
-    matched = store.add_note(revised, notes[-1])
-    return {'ok': True, 'matched': matched}
+
+    if len(answers) > 2:
+        note = engine.collect(engine.stream_answer(
+            _why_thread + [{'role': 'user', 'content': review.SAVE_NOTE_SUMMARY_PROMPT}],
+            temperature=0.2))
+        note = note or answers[-1]          # 总结失败就退回最后一条，别让用户白存
+    else:
+        note = answers[-1]
+
+    matched = store.add_note(revised, note)
+    return {'ok': True, 'matched': matched, 'summarized': len(answers) > 2, 'note': note}
 
 
 @app.post('/api/practice/transcribe')
@@ -158,6 +174,21 @@ async def speak(payload: dict = Body(...)):
 @app.get('/api/archive')
 async def archive(filter: str = 'all'):
     return store.archive_items(filter)
+
+
+@app.post('/api/archive/analyze')
+def analyze_patterns():
+    """分析语法习惯。复用 review.py:REVIEW_SYSTEM_PROMPT，
+    取法跟终端版 review_patterns() 一致：最近 30 条 draft。"""
+    drafts = [r['draft'] for r in store.load_records()[-30:] if r.get('draft')]
+    if len(drafts) < 3:
+        return ndjson(iter([{'error': f'记录太少（{len(drafts)} 条），攒到 3 条以上再分析'}]))
+    numbered = '\n'.join(f'{i + 1}. {d}' for i, d in enumerate(drafts))
+    messages = [
+        {'role': 'system', 'content': review.REVIEW_SYSTEM_PROMPT},
+        {'role': 'user', 'content': f'以下是用户最近{len(drafts)}句英语练习原句，请按要求分析:\n\n{numbered}'},
+    ]
+    return ndjson(engine.stream_answer(messages, temperature=0.3))
 
 
 # ==================== 以下仍是 MOCK ====================
