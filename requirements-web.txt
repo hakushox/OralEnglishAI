@@ -1,0 +1,4 @@
+# 浏览器版额外依赖（原 requirements.txt 不动）
+#   pip install -r requirements-web.txt
+fastapi==0.141.1
+uvicorn==0.53.0

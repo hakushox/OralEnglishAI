@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpeakNatural</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="shell">
+
+  <nav class="nav">
+    <button data-view="practice" class="on">练习</button>
+    <button data-view="word">单词</button>
+    <button data-view="parse">长难句</button>
+    <button data-view="chat">随便问</button>
+    <button data-view="archive" class="spacer">档案 <span id="arc-count">—</span></button>
+  </nav>
+
+  <!-- ==================== 练习 ==================== -->
+  <section class="view on" id="v-practice">
+    <div id="p-result" style="display:none">
+      <div class="label">你说的</div>
+      <div class="draft en" id="p-draft"></div>
+      <div class="label acc">地道版</div>
+      <div class="revised en" id="p-revised"></div>
+      <div class="row" style="margin-bottom:6px">
+        <button class="pill" id="p-play-draft">▶ 原句</button>
+        <button class="pill acc" id="p-play-rev">▶ 地道版</button>
+        <button class="pill ghost" id="p-why">为什么这么改</button>
+        <button class="pill ghost" id="p-save" style="margin-left:auto">存档</button>
+      </div>
+      <div id="p-why-box" style="display:none;margin-top:16px">
+        <div class="card" id="p-why-text"></div>
+        <input type="text" id="p-why-input" placeholder="还有什么不解？" style="margin-top:10px">
+      </div>
+    </div>
+
+    <div id="p-input-box">
+      <textarea id="p-input" rows="3" placeholder="写一句英文，或者点麦克风直接说"></textarea>
+      <div class="row" style="margin-top:12px">
+        <button class="pill acc" id="p-go">改一改</button>
+        <span class="hint">⌘ + Enter 提交</span>
+      </div>
+    </div>
+
+    <div class="recbar">
+      <button class="mic" id="p-mic" aria-label="开始录音">●</button>
+      <div class="wave" id="p-wave"></div>
+      <span class="muted" id="p-recstate" style="margin-left:auto">点麦克风开始说</span>
+    </div>
+  </section>
+
+  <!-- ==================== 单词 ==================== -->
+  <section class="view" id="v-word">
+    <div class="two-col">
+      <div>
+        <div class="label">生词本</div>
+        <div class="wlist" id="w-list"></div>
+        <input type="text" id="w-add" placeholder="查新词" style="margin-top:10px;font-size:13px;padding:8px 10px">
+      </div>
+      <div id="w-detail"></div>
+    </div>
+  </section>
+
+  <!-- ==================== 长难句 ==================== -->
+  <section class="view" id="v-parse">
+    <div id="s-result" style="display:none">
+      <div class="en" id="s-sentence" style="font-size:18px;line-height:1.7;margin-bottom:8px"></div>
+      <div class="muted" id="s-tags" style="margin-bottom:18px"></div>
+      <div class="card" id="s-analysis" style="font-size:14px;line-height:1.75;color:var(--text-2)"></div>
+      <input type="text" id="s-more" placeholder="还有什么不解？" style="margin:14px 0 12px">
+      <div class="row">
+        <button class="pill acc" id="s-save">存为笔记</button>
+        <button class="pill" id="s-review">复习过往笔记</button>
+      </div>
+    </div>
+    <div id="s-input-box">
+      <textarea id="s-input" rows="3" placeholder="贴一句想拆解的长难句"></textarea>
+      <div class="row" style="margin-top:12px">
+        <button class="pill acc" id="s-go">分析结构</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 随便问 ==================== -->
+  <section class="view" id="v-chat">
+    <div class="row" style="justify-content:flex-end;margin-bottom:18px">
+      <div class="seg" id="c-mode">
+        <button data-mode="local" class="on">快速</button>
+        <button data-mode="deep">深度</button>
+      </div>
+    </div>
+    <div class="bubbles en" id="c-bubbles"></div>
+    <input type="text" id="c-input" placeholder="你想聊什么？">
+    <div class="row" style="margin-top:12px">
+      <button class="pill" id="c-save">总结存档</button>
+      <span class="hint">选中任意英文词可查词典</span>
+    </div>
+  </section>
+
+  <!-- ==================== 档案 ==================== -->
+  <section class="view" id="v-archive">
+    <div class="row" style="margin-bottom:18px">
+      <button class="pill acc" data-filter="all">全部</button>
+      <button class="pill" data-filter="draft">造句</button>
+      <button class="pill" data-filter="word">单词</button>
+      <button class="pill" data-filter="parse">句型</button>
+      <button class="pill" data-filter="chat">对话</button>
+      <button class="pill ghost" id="a-analyze" style="margin-left:auto">分析我的语法习惯</button>
+    </div>
+    <div id="a-list"></div>
+  </section>
+
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
