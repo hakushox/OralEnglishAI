@@ -154,7 +154,7 @@ async def save_note(payload: dict = Body(...)):
 
     if len(answers) > 1:
         note = engine.collect(engine.stream_answer(
-            _why_thread + [{'role': 'user', 'content': review.SAVE_NOTE_SUMMARY_PROMPT}],
+            _why_thread + [{'role': 'user', 'content': prompts.SAVE_NOTE_SUMMARY_PROMPT}],
             temperature=0.2))
         note = note or answers[-1]          # 总结失败就退回最后一条，别让用户白存
     else:
