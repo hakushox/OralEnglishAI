@@ -427,7 +427,38 @@ bindSend('#p-why-input', '#p-why-send',
    录到的文字只填进自己那个框，不切换页面状态 ——
    说话是一种输入方式，不该等于"开始新对话"。
    语言按框的性质走（data-lang）：造句/句子/查词框说英文，追问框和随便问说中文。 */
-const BARS = 22;
+const BARS = 14;        // 波形缩成麦克风旁边一小条，条数也跟着减
+
+/* 浏览器自带的实时识别，只用来做录音过程中的字幕预览。
+   为什么不用 whisper 做实时：实测 large-v3-turbo 在 CPU 上转写 7 秒音频要 4 秒，
+   每秒重转一遍整个缓冲区根本跟不上（终端版 listen() 就是这么做的，所以很卡）。
+   浏览器这个是瞬时的、零 CPU，代价是音频要经 Google 的服务器。
+   最终定稿仍然用本地 whisper —— 它更准，而且保留语法错误（练习需要）。 */
+function startLiveCaption(lang, onText) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return null;
+  try {
+    const sr = new SR();
+    sr.lang = lang === 'zh' ? 'zh-CN' : lang === 'en' ? 'en-US' : navigator.language;
+    sr.continuous = true;
+    sr.interimResults = true;
+    let settled = '';
+    sr.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) settled += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      onText((settled + interim).trim());
+    };
+    sr.onerror = () => {};            // no-speech / aborted 之类不用管，波形还在
+    sr.start();
+    return sr;
+  } catch (err) {
+    return null;
+  }
+}
 
 // 浏览器支持的录音格式不一样：Chrome/Edge 走 webm+opus，Safari 只有 mp4。
 // 传空字符串让浏览器自己挑，比硬写一个不支持的格式安全。
@@ -436,6 +467,16 @@ function pickMime() {
   if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
   return want.find((t) => MediaRecorder.isTypeSupported(t)) || '';
 }
+
+// 录音是**追加**而不是替换：一句没说完可以再录一次补上，
+// 也可以先打几个字再补说。空格接缝处理掉重复空白。
+const joinSpeech = (a, b) => {
+  a = (a || '').replace(/\s+$/, '');
+  b = (b || '').replace(/^\s+/, '');
+  if (!a) return b;
+  if (!b) return a;
+  return a + ' ' + b;
+};
 
 function setupMic(btn) {
   const field = btn.closest('.field');
@@ -452,6 +493,7 @@ function setupMic(btn) {
   });
 
   let on = false, raf = null, media = null, ctx = null, rec = null, chunks = [];
+  let sr = null, live = '', base = '';
 
   async function start() {
     try {
@@ -460,6 +502,7 @@ function setupMic(btn) {
       msg('拿不到麦克风权限，检查一下系统设置里的隐私权限');
       return;
     }
+    
     on = true;
     field.classList.add('recording');
 
@@ -483,10 +526,19 @@ function setupMic(btn) {
     rec = new MediaRecorder(media, mime ? { mimeType: mime } : undefined);
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     rec.start();
+
+    // 记住开录前已有的内容，实时字幕接在它后面 —— 不清空，方便分几次说完
+    base = target.value;
+    live = '';
+    sr = startLiveCaption(lang, (text) => {
+      live = text;
+      if (on) target.value = joinSpeech(base, text);
+    });
   }
 
   async function stop() {
     on = false;
+    if (sr) { try { sr.stop(); } catch (e) { /* 已经停了 */ } sr = null; }
     // 先把 recorder 停干净拿到数据，再关音频流 —— 顺序反了会丢掉最后一段
     const blob = await new Promise((done) => {
       if (!rec || rec.state === 'inactive') return done(null);
@@ -502,7 +554,8 @@ function setupMic(btn) {
 
     if (!blob || blob.size < 1200) {       // 太短基本是误触
       field.classList.remove('recording');
-      msg('录到的太短了');
+      target.value = joinSpeech(base, live);   // 实时字幕里有东西就留着，别白说
+      msg(live ? '录音太短，先用实时识别的结果' : '录到的太短了');
       return;
     }
 
@@ -514,15 +567,22 @@ function setupMic(btn) {
       form.append('lang', lang);
       const r = await (await fetch('/api/transcribe', { method: 'POST', body: form })).json();
       if (r.ok) {
-        // 只填进这个框，让用户先改再提交 —— 识别总有错，
+        // 追加到开录前的内容后面，并让用户先改再提交 —— 识别总有错，
         // 跟终端版 edit_text() 一个道理
-        target.value = r.text;
+        target.value = joinSpeech(base, r.text);
         target.focus();
+        target.setSelectionRange(target.value.length, target.value.length);
+      } else if (live) {
+        // whisper 失败但实时字幕有内容，就留着它 —— 比清空让用户重说一遍好
+        target.value = joinSpeech(base, live);
+        target.focus();
+        msg('本地识别失败，先用实时识别的结果，可以改');
       } else {
         msg(r.msg || '转写失败');
       }
     } catch (err) {
-      msg('转写请求失败：' + err.message);
+      if (live) { target.value = joinSpeech(base, live); msg('转写请求失败，先用实时识别的结果'); }
+      else msg('转写请求失败：' + err.message);
     } finally {
       btn.textContent = '🎙';
       btn.disabled = false;

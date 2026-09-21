@@ -307,16 +307,20 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 .mic-btn:hover { color: var(--accent); background: var(--surface-2); }
 .field.recording .mic-btn { color: var(--accent-on); background: var(--accent); }
 
+/* 波形缩成麦克风左边一小条 —— 输入框要留给实时字幕。
+   铺满整个框的话文字就没地方显示了。 */
 .wave {
-  display: none; position: absolute; left: 16px; right: 48px; top: 16px;
-  align-items: center; gap: 3px; height: 26px; pointer-events: none;
+  display: none; position: absolute; right: 46px; top: 50%;
+  transform: translateY(-50%);
+  align-items: center; gap: 2px; height: 22px; pointer-events: none;
 }
-.field.single .wave { top: 50%; transform: translateY(-50%); }
+.field:not(.single) .wave { top: auto; bottom: 14px; transform: none; }
 .field.recording .wave { display: flex; }
-.field.recording input, .field.recording textarea { caret-color: transparent; }
-.field.recording input::placeholder, .field.recording textarea::placeholder { color: transparent; }
+.field.recording input, .field.recording textarea { padding-right: 116px; }
+/* 不给录音中的输入框加压暗/斜体 —— 框里同时有"已确认的前半截"和
+   "正在识别的新内容"，整框变样会误伤前半截。录音状态靠波形和亮起的麦克风表示。 */
 .wave i {
-  width: 3px; height: 3px; background: var(--accent-dim);
+  width: 2px; height: 3px; background: var(--accent-dim);
   border-radius: 2px; transition: height 0.08s linear, background 0.15s linear;
 }
 
