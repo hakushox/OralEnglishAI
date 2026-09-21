@@ -748,24 +748,29 @@ async function loadWordBook() {
     });
   });
 
-  $('#w-prev').onclick = () => go(deckIndex - 1);
-  $('#w-next-card').onclick = () => go(deckIndex + 1);
-  $$('i', dotBox).forEach((d, k) => d.addEventListener('click', () => go(k)));
+  // 同理：翻页按钮和圆点点完也要失焦，否则焦点留在它们身上，
+  // 之后按方向键会给它们画焦点框
+  const nav = (fn) => (e) => { e.currentTarget.blur(); fn(); };
+  $('#w-prev').onclick = nav(() => go(deckIndex - 1));
+  $('#w-next-card').onclick = nav(() => go(deckIndex + 1));
+  $$('i', dotBox).forEach((d, k) => d.addEventListener('click', nav(() => go(k))));
 
-  /* 翻页手势：只吃「横向滚动」，不做拖拽。
-     拖拽会劫持点击（拖一点点就变成拖动，点不开卡片），对触控鼠标尤其难用。
-     横滚对触控板双指横滑、Magic Mouse 横扫都是原生手势，且跟点击完全不冲突。
-     累积到阈值才翻一张，并加冷却，免得一次长滑飞过好几张。 */
-  let wheelAcc = 0, wheelLock = 0;
+  /* 翻页手势：只吃横向滚动，而且**一次手势只翻一张**。
+     触控板一次物理滑动会连发几十个 wheel 事件、累计几百 px，
+     所以不能用"累积到阈值就翻 + 冷却"那种写法 —— 冷却一过又会再翻，直接跳过好几张。
+     改成：翻过一次就锁住，靠事件间隔（140ms 没有新事件）判断手势结束才解锁。 */
+  let wheelAcc = 0, wheelFired = false, wheelIdle = null;
   deck.onwheel = (e) => {
     if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;   // 纵向滚动交给页面
     e.preventDefault();
-    if (Date.now() < wheelLock) return;
+    clearTimeout(wheelIdle);
+    wheelIdle = setTimeout(() => { wheelAcc = 0; wheelFired = false; }, 140);
+    if (wheelFired) return;
     wheelAcc += e.deltaX;
-    if (Math.abs(wheelAcc) > 45) {
+    if (Math.abs(wheelAcc) > 28) {
       go(deckIndex + Math.sign(wheelAcc));
+      wheelFired = true;
       wheelAcc = 0;
-      wheelLock = Date.now() + 260;
     }
   };
 
@@ -789,7 +794,10 @@ function closeWordBook() {
   $('#w-section').classList.remove('open');
 }
 
-$('#w-book').addEventListener('click', () => {
+$('#w-book').addEventListener('click', (e) => {
+  // 点完立刻失焦。不然按方向键翻页时 Chrome 会给这个还留着焦点的按钮
+  // 画上 focus-visible 焦点框，看起来像"我的生词本被选中了"
+  e.currentTarget.blur();
   if ($('#w-section').classList.contains('open')) { closeWordBook(); return; }
   $('#w-section').classList.add('open');
   loadWordBook();
