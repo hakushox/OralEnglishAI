@@ -643,6 +643,7 @@ async function loadWordBook() {
     deck.innerHTML = '<div class="hint" style="padding:10px 2px">生词本还是空的，查个词存进来吧</div>';
     return;
   }
+  deckIndex = 0;
 
   deck.innerHTML = list.map((w) => `
     <div class="wslide" data-word="${esc(w.word)}" data-id="${w.id}">
@@ -655,7 +656,6 @@ async function loadWordBook() {
         <div class="wbig-gloss">${esc(glossOf(w.usage))}</div>
         <div class="wbig-foot">
           <span>存于 ${esc(w.time || '未知')}</span>
-          ${w.issue ? `<span title="上次测验的问题">· ${esc(w.issue.slice(0, 20))}</span>` : ''}
           <span class="chev">⌄</span>
         </div>
         <div class="wbig-detail">
@@ -673,14 +673,51 @@ async function loadWordBook() {
     </div>`).join('');
 
   const slides = $$('.wslide', deck);
+  const dotBox = $('#w-dots');       // 别叫 dots：外层有同名的熟练度渲染函数
+  dotBox.innerHTML = list.map(() => '<i></i>').join('');
 
-  slides.forEach((slide) => {
-    // 点卡片本体 = 往上提拉展开 / 收起；详情里的按钮各管各的
+  /* 按「离中心的距离」摆位：中间原尺寸，两侧逐级缩小、压到后面、淡出。
+     容器高度跟着当前那张走（展开详情时会变高），所以每次摆位后重新量一次。 */
+  function layout() {
+    slides.forEach((sl, i) => {
+      const d = i - deckIndex;
+      const ad = Math.abs(d);
+      // 衰减要温和：参考的 coverflow 里侧卡是清楚可见的，不是快消失的影子
+      const scale = Math.max(0.78, 1 - ad * 0.1);
+      const shift = d * 47;                    // % of card width，产生重叠
+      sl.style.transform = `translateX(-50%) translateX(${shift}%) scale(${scale})`;
+      sl.style.opacity = ad > 2 ? 0 : String(Math.max(0, 1 - ad * 0.22));
+      sl.style.zIndex = String(50 - ad);
+      sl.style.pointerEvents = ad > 2 ? 'none' : 'auto';
+      sl.classList.toggle('active', d === 0);
+      if (d !== 0) sl.classList.remove('up');  // 翻走的那张自动收起
+    });
+    $('#w-pos').textContent = `${deckIndex + 1} / ${list.length}`;
+    $$('i', dotBox).forEach((d, k) => d.classList.toggle('on', k === deckIndex));
+    $('#w-prev').disabled = deckIndex <= 0;
+    $('#w-next-card').disabled = deckIndex >= list.length - 1;
+    fitHeight();
+  }
+
+  function fitHeight() {
+    const cur = slides[deckIndex];
+    if (!cur) return;
+    // 卡片被 scale 过，offsetHeight 是缩放前的值，正好是我们要的布局高度
+    deck.style.height = cur.querySelector('.wbig').offsetHeight + 16 + 'px';
+  }
+
+  const go = (k) => {
+    deckIndex = Math.max(0, Math.min(list.length - 1, k));
+    layout();
+  };
+
+  slides.forEach((slide, i) => {
     $('.wbig', slide).addEventListener('click', (e) => {
       if (e.target.closest('[data-act]')) return;
-      const wasUp = slide.classList.contains('up');
-      slides.forEach((x) => x.classList.remove('up'));
-      if (!wasUp) slide.classList.add('up');
+      if (i !== deckIndex) { go(i); return; }        // 点两侧的卡片 = 翻到它
+      slide.classList.toggle('up');                  // 点中间那张 = 往上提拉展开
+      setTimeout(fitHeight, 30);                     // 等 max-height 开始过渡再量
+      setTimeout(fitHeight, 430);
     });
 
     const word = slide.dataset.word;
@@ -706,35 +743,54 @@ async function loadWordBook() {
     });
   });
 
-  // 位置指示 + 圆点，可以直接点圆点跳
-  // 注意别叫 dots —— 外层有个同名的熟练度渲染函数 dots()，
-  // 局部 const 会遮蔽它并让模板里的调用落进 TDZ，整个渲染直接挂掉
-  const dotBox = $('#w-dots');
-  dotBox.innerHTML = list.map(() => '<i></i>').join('');
-  const width = () => deck.clientWidth;
-  const sync = () => {
-    deckIndex = Math.round(deck.scrollLeft / Math.max(1, width()));
-    $('#w-pos').textContent = `${deckIndex + 1} / ${list.length}`;
-    $$('i', dotBox).forEach((d, k) => d.classList.toggle('on', k === deckIndex));
-    $('#w-prev').disabled = deckIndex <= 0;
-    $('#w-next-card').disabled = deckIndex >= list.length - 1;
-  };
-  const go = (k) => deck.scrollTo({
-    left: Math.max(0, Math.min(list.length - 1, k)) * width(), behavior: 'smooth',
-  });
-  deck.onscroll = sync;
   $('#w-prev').onclick = () => go(deckIndex - 1);
   $('#w-next-card').onclick = () => go(deckIndex + 1);
   $$('i', dotBox).forEach((d, k) => d.addEventListener('click', () => go(k)));
-  sync();
 
-  // 键盘左右翻页：只在抽屉开着、且焦点不在输入框里时生效
+  /* 横滑翻页：卡片是绝对定位的，没有原生滚动可用，所以自己处理 pointer 拖动。
+     拖动中实时跟手（整组跟着位移），松手按距离决定翻不翻。 */
+  let dragX = null, dragged = 0;
+  deck.onpointerdown = (e) => {
+    if (e.target.closest('[data-act]')) return;
+    dragX = e.clientX; dragged = 0;
+    slides.forEach((sl) => { sl.style.transition = 'none'; });
+  };
+  deck.onpointermove = (e) => {
+    if (dragX === null) return;
+    dragged = e.clientX - dragX;
+    const w = deck.clientWidth || 1;
+    slides.forEach((sl, i) => {
+      const d = i - deckIndex - (-dragged / w) * 1.6;   // 跟手，但阻尼一下
+      const ad = Math.abs(d);
+      sl.style.transform =
+        `translateX(-50%) translateX(${d * 47}%) scale(${Math.max(0.78, 1 - ad * 0.1)})`;
+      sl.style.opacity = ad > 2.4 ? 0 : String(Math.max(0, 1 - ad * 0.22));
+      sl.style.zIndex = String(50 - Math.round(ad));
+    });
+  };
+  const dragEnd = () => {
+    if (dragX === null) return;
+    dragX = null;
+    slides.forEach((sl) => { sl.style.transition = ''; });
+    if (dragged < -40) go(deckIndex + 1);
+    else if (dragged > 40) go(deckIndex - 1);
+    else layout();
+    dragged = 0;
+  };
+  deck.onpointerup = dragEnd;
+  deck.onpointercancel = dragEnd;
+  deck.onpointerleave = dragEnd;
+
+  // 键盘左右翻页：只在单词页、抽屉开着、焦点不在输入框时生效
   document.onkeydown = (e) => {
-    if ($('#w-deck').innerHTML === '' || $('#v-word').classList.contains('on') === false) return;
+    if (!$('#v-word').classList.contains('on') || !$('#w-deck').querySelector('.wslide')) return;
     if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
     if (e.key === 'ArrowLeft') { e.preventDefault(); go(deckIndex - 1); }
     if (e.key === 'ArrowRight') { e.preventDefault(); go(deckIndex + 1); }
   };
+
+  layout();
+  setTimeout(fitHeight, 60);      // 字体/markdown 渲染完再量一次，高度才准
 }
 
 function closeWordBook() {
