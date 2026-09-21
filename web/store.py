@@ -76,7 +76,18 @@ def load_words():
     return [i for i in data if isinstance(i, dict)]
 
 
-def save_word(word, usage):
+def extract_stars(text):
+    """从解析正文里抽出星级（WORD_PARSE_SYSTEM_PROMPT 要求用 ★ 标"高级程度/地道程度"）。
+
+    必须单独存成字段：追问后存档会先走 REVIEW_WORDS_SYSTEM_PROMPT 总结，
+    而那个 prompt 不要求保留星级，一总结就丢了。
+    """
+    import re
+    m = re.search(r'★+☆*', text or '')
+    return m.group(0) if m else ''
+
+
+def save_word(word, usage, stars=''):
     """存/覆盖一个词的笔记。
 
     不能用 save_path.save_word_summary() —— 它发现重名时会弹交互式 prompt()
@@ -86,13 +97,19 @@ def save_word(word, usage):
     import datetime
     words = load_words()
     stamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+    stars = stars or extract_stars(usage)
     for item in words:
         if item.get('word', '').lower() == word.lower():
             item['usage'] = usage
             item['time'] = stamp
+            if stars:
+                item['stars'] = stars
             _write_words(words)
             return 'updated'
-    words.append({'word': word, 'usage': usage, 'time': stamp})
+    entry = {'word': word, 'usage': usage, 'time': stamp}
+    if stars:
+        entry['stars'] = stars
+    words.append(entry)
     _write_words(words)
     return 'created'
 

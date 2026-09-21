@@ -249,6 +249,8 @@ async def words():
             'proficiency': w.get('proficiency'),
             'issue': w.get('issue', ''),
             'usage': w.get('usage', ''),
+            # 老记录没有 stars 字段，退回从正文里现抽，免得需要数据迁移
+            'stars': w.get('stars') or store.extract_stars(w.get('usage', '')),
         }
         for w in reversed(store.load_words())      # 最近存的排前面
     ]
@@ -315,7 +317,8 @@ async def word_save(payload: dict = Body(...)):
     if not word or not usage:
         return {'ok': False, 'msg': '没有可保存的内容'}
     action = store.save_word(word, usage)
-    return {'ok': True, 'action': action, 'note': usage}
+    return {'ok': True, 'action': action, 'note': usage,
+            'stars': store.extract_stars(usage)}
 
 
 @app.post('/api/word/save-note')
@@ -338,8 +341,12 @@ async def word_save_note(payload: dict = Body(...)):
     else:
         note = answers[-1]
 
-    action = store.save_word(word, note)
-    return {'ok': True, 'action': action, 'summarized': len(answers) > 1, 'note': note}
+    # 星级从**第一轮解析**里抽（answers[0]），不是从总结里抽 ——
+    # REVIEW_WORDS_SYSTEM_PROMPT 不要求保留星级，总结完就没了
+    stars = store.extract_stars(note) or store.extract_stars(answers[0])
+    action = store.save_word(word, note, stars)
+    return {'ok': True, 'action': action, 'summarized': len(answers) > 1,
+            'note': note, 'stars': stars}
 
 
 @app.post('/api/parse')

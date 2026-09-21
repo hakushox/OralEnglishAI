@@ -351,31 +351,65 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 .wbook { margin-top: 30px; padding-top: 6px; border-top: 0.5px solid var(--border); }
 #w-count { color: var(--text-5); }
 
-/* 生词本每行是个手风琴：点开就地看笔记，不用跳到主区 */
-.wrow { border-bottom: 0.5px solid var(--border); }
-.wrow:last-child { border-bottom: none; }
-.wrow-head {
-  width: 100%; display: flex; align-items: center; gap: 12px;
-  background: none; border: none; cursor: pointer; text-align: left;
-  font: inherit; padding: 12px 2px; color: var(--text-3);
-  transition: color 0.15s var(--ease);
+/* 星级：地道/高级程度，从解析正文里抽出来单独显示 */
+.stars { color: var(--accent); font-size: 13px; letter-spacing: 1px; }
+
+/* ============ 生词本：可横滑的卡片牌组 ============
+   用原生 overflow-x + scroll-snap —— 触控板横滑、触屏滑动、拖动全都白送，
+   不用自己写手势。另外给鼠标用户配 ‹ › 按钮。 */
+.deck {
+  display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory;
+  padding: 4px 2px 14px; margin: 0 -2px;
+  scrollbar-width: none;
 }
-.wrow-head:hover { color: var(--text); }
-.wrow.open .wrow-head { color: var(--text); }
-.wrow-word { font-size: 15px; }
-.wrow-meta { font-size: 11px; color: var(--text-5); }
-.wrow-head .prof { margin-left: auto; font-size: 11px; letter-spacing: 1px; }
-.wrow-head .chev {
-  color: var(--text-5); font-size: 12px; flex: none;
-  transition: transform 0.25s var(--ease);
+.deck::-webkit-scrollbar { display: none; }
+
+.wtile {
+  flex: 0 0 196px; scroll-snap-align: start;
+  background: var(--surface); border: 0.5px solid var(--border);
+  border-radius: 12px; padding: 14px 15px 12px;
+  display: flex; flex-direction: column; gap: 7px;
+  cursor: pointer; text-align: left; font: inherit;
+  transition: border-color 0.18s var(--ease), transform 0.18s var(--ease),
+              background 0.18s var(--ease);
 }
-.wrow.open .wrow-head .chev { transform: rotate(180deg); }
-.wrow-body { display: none; padding: 0 0 16px; }
-.wrow.open .wrow-body { display: block; animation: slideup 0.4s var(--ease) both; }
-.wrow-issue {
-  font-size: 12px; color: var(--text-4); margin-bottom: 9px;
-  padding-left: 10px; border-left: 2px solid var(--del);
+.wtile:hover {
+  border-color: var(--accent-dim); background: var(--surface-2);
+  transform: translateY(-3px);
 }
+.wtile-top { display: flex; align-items: center; gap: 8px; min-height: 18px; }
+.wtile-top .stars { font-size: 11px; }
+.wtile-prof { margin-left: auto; font-size: 10px; letter-spacing: 1px; }
+.wtile-word {
+  font-size: 21px; color: var(--text); line-height: 1.25;
+  word-break: break-word;
+}
+.wtile-gloss {
+  font-size: 12px; color: var(--text-3); line-height: 1.55;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden; min-height: 54px;
+}
+.wtile-foot {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 10px; color: var(--text-5);
+  padding-top: 8px; border-top: 0.5px solid var(--border);
+}
+.wtile-test {
+  margin-left: auto; background: none; border: none; cursor: pointer;
+  color: var(--accent-dim); font: inherit; font-size: 11px; padding: 2px 4px;
+}
+.wtile-test:hover { color: var(--accent); }
+
+.deck-bar { display: flex; align-items: center; gap: 10px; margin: 8px 0 2px; }
+.deck-nav {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--surface); border: 0.5px solid var(--border);
+  color: var(--text-3); font-size: 15px; line-height: 1; cursor: pointer;
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.deck-nav:hover { color: var(--text); border-color: var(--border-strong, #3a3a41); }
+.deck-nav[disabled] { opacity: 0.3; cursor: default; }
+.deck-pos { font-size: 11px; color: var(--text-5); }
 
 /* 存完之后点亮「查下一个词」：告诉用户这一轮结束了，下一步在这儿 */
 .invite.pulse { color: var(--accent-text); }

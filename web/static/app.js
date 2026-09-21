@@ -524,6 +524,7 @@ async function analyzeWord(word) {
   wordSetStage(2);
   $('#w-word').textContent = word;
   $('#w-badge').textContent = '';
+  $('#w-stars').textContent = '';
   $('#w-thread').innerHTML = '';
   $('#w-saved').innerHTML = '';
   $('.wcard').classList.remove('ready');
@@ -539,6 +540,8 @@ async function analyzeWord(word) {
   speak($('#w-word'), word, $('#w-play'));
 
   wordState.body = await streamRound('词条解析', '/api/word/analyze', { word });
+  const st = (wordState.body.match(/★+☆*/) || [''])[0];   // 星级拎到卡头上，别埋在正文里
+  $('#w-stars').textContent = st;
   $('.wcard').classList.add('ready');
 }
 
@@ -610,62 +613,103 @@ $('#w-save-note').addEventListener('click', async (e) => {
 
 function afterWordSaved() {
   refreshWordCount();
-  $('#w-list').innerHTML = '';        // 生词本内容变了，下次展开重新取
+  $('#w-deck').innerHTML = '';        // 生词本内容变了，下次展开重新取
+  $('#w-deckbar').hidden = true;
   $('#w-book').classList.remove('open');
 }
 
-/* ========== 生词本：每行可就地展开，带熟练度 / 存入时间 / 操作 ========== */
+/* ========== 生词本：可横滑的卡片牌组 ========== */
+
+// 从笔记里抽一句中文释义当卡片摘要。
+// 必须先剥掉 markdown 标记再匹配 —— 模型写的是 `**释义**：喧闹的`，
+// 中间那两个星号会把 /释义[:：]/ 挡住。
+function glossOf(md) {
+  const plain = (md || '').replace(/[*`_]/g, '');
+  const m = plain.match(/(?:中文释义|中文|释义)\s*[:：]\s*([^\n]+)/);
+  let text = m ? m[1] : '';
+  if (!text) {
+    const lines = plain.split('\n')
+      .map((l) => l.replace(/^[-•\d.、\s]+/, '').trim())
+      .filter(Boolean);
+    // 跳过"词头 + 词性"那种纯英文行，它不是释义
+    text = lines.find((l) => l.length > 6 && /[\u4e00-\u9fa5]/.test(l)) || lines[0] || '';
+  }
+  // 统一清理：
+  // - 开头的项目符号（模型会用 -、•、–，还可能夹窄空格 \u202f）
+  //   注意「**释义**：」后面常紧跟换行，上面那个 \s* 会跨过换行把 "- " 一起抓进来
+  // - 英文括注和例句/搭配/辨析，卡片上只放第一句中文释义
+  text = text
+    .replace(/^[\s\u00a0\u202f\-–—•·>]+/, '')
+    .split(/例句|Example|English|常见搭配|搭配|辨析|同义词|用法/)[0]
+    .split(/[(（]/)[0]
+    .split('。')[0]
+    .trim();
+  return text.slice(0, 56) || '（还没有笔记）';
+}
+
+const deckStars = (s) => s
+  ? `<span class="stars">${esc(s)}</span>`
+  : '<span class="stars" style="color:var(--text-5)" title="解析里没给星级">—</span>';
+
 async function loadWordBook() {
-  const box = $('#w-list');
-  box.innerHTML = '<div class="hint">读取中…</div>';
+  const deck = $('#w-deck');
+  const bar = $('#w-deckbar');
+  deck.innerHTML = '<div class="hint">读取中…</div>';
   const list = await (await fetch('/api/words')).json();
   if (!list.length) {
-    box.innerHTML = '<div class="hint">生词本还是空的，查个词存进来吧</div>';
+    bar.hidden = true;
+    deck.innerHTML = '<div class="hint">生词本还是空的，查个词存进来吧</div>';
     return;
   }
-  box.innerHTML = list.map((w) => `
-    <div class="wrow" data-word="${esc(w.word)}">
-      <button class="wrow-head">
-        <span class="wrow-word en">${esc(w.word)}</span>
-        <span class="wrow-meta">${esc(w.time || '')}</span>
-        <span class="prof" title="${w.proficiency == null ? '还没测过' : '熟练度 ' + w.proficiency + '/5'}">${dots(w.proficiency)}</span>
-        <span class="chev">⌄</span>
-      </button>
-      <div class="wrow-body">
-        ${w.issue ? `<div class="wrow-issue">上次测验的问题：${esc(w.issue)}</div>` : ''}
-        <div class="card md">${mdToHtml(w.usage || '（这个词还没有笔记）')}</div>
-        <div class="row" style="margin-top:10px">
-          <button class="pill acc" data-act="test">出题测一测</button>
-          <button class="pill" data-act="review">复习并追问</button>
-          <button class="pill ghost" data-act="cam">剑桥词典 ↗</button>
-        </div>
+  bar.hidden = false;
+  deck.innerHTML = list.map((w) => `
+    <button class="wtile" data-word="${esc(w.word)}" title="点击复习并追问">
+      <div class="wtile-top">
+        ${deckStars(w.stars)}
+        <span class="wtile-prof">${dots(w.proficiency)}</span>
       </div>
-    </div>`).join('');
+      <div class="wtile-word en">${esc(w.word)}</div>
+      <div class="wtile-gloss">${esc(glossOf(w.usage))}</div>
+      <div class="wtile-foot">
+        <span>${esc((w.time || '').slice(0, 10))}</span>
+        <span class="wtile-test" data-test>测一测</span>
+      </div>
+    </button>`).join('');
 
-  $$('.wrow', box).forEach((row) => {
-    $('.wrow-head', row).addEventListener('click', () => {
-      const wasOpen = row.classList.contains('open');
-      $$('.wrow', box).forEach((r) => r.classList.remove('open'));
-      if (!wasOpen) row.classList.add('open');
-    });
-    const word = row.dataset.word;
-    $('[data-act=cam]', row).addEventListener('click', () => window.open(
-      'https://dictionary.cambridge.org/dictionary/english-chinese-simplified/' +
-      encodeURIComponent(word), '_blank'));
-    $('[data-act=review]', row).addEventListener('click', () => showSavedWord(word));
-    $('[data-act=test]', row).addEventListener('click', (e) => {
-      const b = e.target, old = b.textContent;
-      b.textContent = '出题功能还没接上';
-      b.disabled = true;
-      setTimeout(() => { b.textContent = old; b.disabled = false; }, 2200);
+  $$('.wtile', deck).forEach((tile) => {
+    tile.addEventListener('click', (e) => {
+      if (e.target.hasAttribute('data-test')) {
+        e.stopPropagation();
+        const b = e.target, old = b.textContent;
+        b.textContent = '还没接上';
+        setTimeout(() => { b.textContent = old; }, 1800);
+        return;
+      }
+      showSavedWord(tile.dataset.word);
     });
   });
+
+  // ‹ › 和位置指示：横滑本身靠原生 scroll-snap，这里只给鼠标用户补个入口
+  const tiles = $$('.wtile', deck);
+  const step = () => (tiles[0] ? tiles[0].offsetWidth + 12 : 208);
+  const syncPos = () => {
+    const i = Math.round(deck.scrollLeft / step());
+    $('#w-pos').textContent = `${Math.min(i + 1, tiles.length)} / ${tiles.length}`;
+    $('#w-prev').disabled = deck.scrollLeft < 4;
+    $('#w-next-card').disabled =
+      deck.scrollLeft + deck.clientWidth >= deck.scrollWidth - 4;
+  };
+  deck.onscroll = syncPos;
+  $('#w-prev').onclick = () => deck.scrollBy({ left: -step(), behavior: 'smooth' });
+  $('#w-next-card').onclick = () => deck.scrollBy({ left: step(), behavior: 'smooth' });
+  syncPos();
 }
 
 $('#w-book').addEventListener('click', (e) => {
-  const box = $('#w-list');
-  if (box.innerHTML) {
-    box.innerHTML = '';
+  const deck = $('#w-deck');
+  if (deck.innerHTML) {
+    deck.innerHTML = '';
+    $('#w-deckbar').hidden = true;
     e.currentTarget.classList.remove('open');
     return;
   }
@@ -680,6 +724,7 @@ async function showSavedWord(word) {
   wordState = { word: d.word, body: d.usage || '' };
   wordSetStage(2);
   $('#w-word').textContent = d.word;
+  $('#w-stars').textContent = d.stars || (d.usage || '').match(/★+☆*/)?.[0] || '';
   $('#w-badge').textContent =
     `存于 ${d.time || '未知时间'}${d.proficiency != null ? ` · 熟练度 ${d.proficiency}/5` : ' · 还没测过'}`;
   $('#w-thread').innerHTML = '';
@@ -694,7 +739,8 @@ async function showSavedWord(word) {
   $('#w-save-note').textContent = '总结这个词，存进生词本';
   $('#w-save-note').disabled = false;
   $('#w-book').classList.remove('open');
-  $('#w-list').innerHTML = '';
+  $('#w-deck').innerHTML = '';
+  $('#w-deckbar').hidden = true;
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 

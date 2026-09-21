@@ -118,6 +118,7 @@
         <div class="wcard-head">
           <span class="wcard-word en" id="w-word"></span>
           <button class="ico" id="w-play" aria-label="朗读这个词">🔊</button>
+          <span class="stars" id="w-stars" title="地道/高级程度"></span>
           <span class="wcard-badge" id="w-badge"></span>
           <button class="pill ghost" id="w-cam">剑桥词典 ↗</button>
           <button class="pill" id="w-save">存进生词本</button>
@@ -144,10 +145,17 @@
         <div class="row" style="margin-top:8px"><span class="hint" id="w-msg"></span></div>
       </div>
 
-      <!-- 生词本：次要，默认收起 -->
+      <!-- 生词本：次要，默认收起。展开是一排可横滑的卡片（幻灯片式） -->
       <div class="wbook">
         <button class="invite subtle" id="w-book">我的生词本<span id="w-count"></span><span class="chev">⌄</span></button>
-        <div id="w-list"></div>
+        <div id="w-list">
+          <div class="deck-bar" id="w-deckbar" hidden>
+            <button class="deck-nav" id="w-prev" aria-label="上一张">‹</button>
+            <span class="deck-pos" id="w-pos"></span>
+            <button class="deck-nav" id="w-next-card" aria-label="下一张">›</button>
+          </div>
+          <div class="deck" id="w-deck"></div>
+        </div>
       </div>
 
     </div>
