@@ -23,7 +23,21 @@ from web import engine, prompts, store, tts
 STATIC_DIR = Path(__file__).parent / 'static'
 
 app = FastAPI(title='SpeakNatural')
-app.mount('/static', StaticFiles(directory=STATIC_DIR), name='static')
+
+
+class NoCacheStatic(StaticFiles):
+    """前端文件一律不许浏览器缓存。
+
+    本地程序，文件就在硬盘上，重读的代价是零；而缓存的代价很大 ——
+    改完前端后页面还在跑旧 JS，表现成"功能没生效"，极难和"后端没重启"区分开。
+    """
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers['Cache-Control'] = 'no-store, must-revalidate'
+        return response
+
+
+app.mount('/static', NoCacheStatic(directory=STATIC_DIR), name='static')
 
 
 @app.get('/')
