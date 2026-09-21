@@ -351,6 +351,47 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 .wbook { margin-top: 30px; padding-top: 6px; border-top: 0.5px solid var(--border); }
 #w-count { color: var(--text-5); }
 
+/* 生词本每行是个手风琴：点开就地看笔记，不用跳到主区 */
+.wrow { border-bottom: 0.5px solid var(--border); }
+.wrow:last-child { border-bottom: none; }
+.wrow-head {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  background: none; border: none; cursor: pointer; text-align: left;
+  font: inherit; padding: 12px 2px; color: var(--text-3);
+  transition: color 0.15s var(--ease);
+}
+.wrow-head:hover { color: var(--text); }
+.wrow.open .wrow-head { color: var(--text); }
+.wrow-word { font-size: 15px; }
+.wrow-meta { font-size: 11px; color: var(--text-5); }
+.wrow-head .prof { margin-left: auto; font-size: 11px; letter-spacing: 1px; }
+.wrow-head .chev {
+  color: var(--text-5); font-size: 12px; flex: none;
+  transition: transform 0.25s var(--ease);
+}
+.wrow.open .wrow-head .chev { transform: rotate(180deg); }
+.wrow-body { display: none; padding: 0 0 16px; }
+.wrow.open .wrow-body { display: block; animation: slideup 0.4s var(--ease) both; }
+.wrow-issue {
+  font-size: 12px; color: var(--text-4); margin-bottom: 9px;
+  padding-left: 10px; border-left: 2px solid var(--del);
+}
+
+/* 存完之后点亮「查下一个词」：告诉用户这一轮结束了，下一步在这儿 */
+.invite.pulse { color: var(--accent-text); }
+.invite.pulse .chev { animation: none; }
+.invite.pulse::before {
+  content: ''; position: absolute; inset: -6px -12px;
+  border-radius: 999px; border: 1px solid var(--accent-dim);
+  animation: ring 1.6s var(--ease) 3;
+}
+.invite { position: relative; }
+@keyframes ring {
+  0% { opacity: 0; transform: scale(0.94); }
+  40% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.06); }
+}
+
 
 .two-col { display: grid; grid-template-columns: 158px minmax(0, 1fr); gap: 22px; }
 .wlist button {

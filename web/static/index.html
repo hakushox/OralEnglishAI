@@ -122,9 +122,8 @@
           <button class="pill ghost" id="w-cam">剑桥词典 ↗</button>
           <button class="pill" id="w-save">存进生词本</button>
         </div>
-        <div class="card md" id="w-body"></div>
-
-        <!-- 追问线索：跟练习页同一套折叠 round -->
+        <!-- 解析和追问都是折叠线索里的一条 round：
+             这样追问进来时，前面的解析会自动收起，屏幕上只留当前在看的那条 -->
         <div class="thread" id="w-thread"></div>
 
         <div class="w-ready">
@@ -138,7 +137,7 @@
           </div>
           <div class="row" style="margin-top:14px">
             <button class="pill acc big" id="w-save-note">总结这个词，存进生词本</button>
-            <button class="invite subtle" id="w-clear" style="margin-left:auto">查下一个词<span class="chev">⌄</span></button>
+            <button class="invite subtle" id="w-next" style="margin-left:auto">查下一个词<span class="chev">⌄</span></button>
           </div>
           <div id="w-saved"></div>
         </div>

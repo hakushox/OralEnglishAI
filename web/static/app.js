@@ -499,6 +499,26 @@ function wordSetStage(n) {
   $('#w-stage').dataset.stage = String(n);
 }
 
+function collapseWordRounds() {
+  $$('#w-thread .round').forEach((r) => r.classList.remove('open'));
+}
+
+/* 往线索里流一条 round。解析和追问走同一条路 ——
+   所以追问进来时，前面那大段解析会自动收起，屏幕上只留当前在看的。 */
+async function streamRound(title, url, body) {
+  const round = addRound(title, '#w-thread');
+  const md = $('.md', round);
+  let raw = '';
+  md.classList.add('caret');
+  await stream(url, body, (m) => {
+    if (m.delta) { raw += m.delta; md.textContent = raw; }
+    if (m.warn || m.error) wordMsg(m.warn || m.error);
+  });
+  md.classList.remove('caret');
+  if (raw.trim()) md.innerHTML = mdToHtml(raw);
+  return raw;
+}
+
 async function analyzeWord(word) {
   wordState = { word, body: '' };
   wordSetStage(2);
@@ -507,49 +527,25 @@ async function analyzeWord(word) {
   $('#w-thread').innerHTML = '';
   $('#w-saved').innerHTML = '';
   $('.wcard').classList.remove('ready');
+  $('#w-next').classList.remove('pulse');
   $('#w-save').textContent = '存进生词本';
   $('#w-save').disabled = false;
   $('#w-save-note').textContent = '总结这个词，存进生词本';
   $('#w-save-note').disabled = false;
   wordMsg('');
 
-  const body = $('#w-body');
-  body.textContent = '';
-  body.classList.add('caret');
-  let raw = '';
-  await stream('/api/word/analyze', { word }, (m) => {
-    if (m.delta) { raw += m.delta; body.textContent = raw; }
-    if (m.warn || m.error) wordMsg(m.warn || m.error);
-  });
-  body.classList.remove('caret');
-  wordState.body = raw;
-  if (raw.trim()) body.innerHTML = mdToHtml(raw);
-  $('.wcard').classList.add('ready');      // 读完了，追问和保存才出现
+  // 先把词读出来 —— 查词的第一件事是知道它怎么念。
+  // 跟解析并行，不用等文字流完（点"查询"本身就是用户手势，不会被浏览器拦）
+  speak($('#w-word'), word, $('#w-play'));
+
+  wordState.body = await streamRound('词条解析', '/api/word/analyze', { word });
+  $('.wcard').classList.add('ready');
 }
 
 function wordMsg(text) {
   const box = $('#w-msg');
   box.textContent = text;
   if (text) setTimeout(() => { if (box.textContent === text) box.textContent = ''; }, 4000);
-}
-
-/* 点生词本里的词：显示**已经存下来的笔记**，不是重新查 ——
-   重新查要花额度，而且会覆盖掉当时讨论出来的结论。想重查有单独的按钮。 */
-async function showSavedWord(word) {
-  const d = await (await fetch('/api/words/' + encodeURIComponent(word))).json();
-  if (!d.ok) { wordMsg(d.msg || '读取失败'); return; }
-  wordState = { word: d.word, body: d.usage || '' };
-  wordSetStage(2);
-  $('#w-word').textContent = d.word;
-  $('#w-badge').textContent =
-    `存于 ${d.time || '未知时间'}${d.proficiency != null ? ` · 熟练度 ${d.proficiency}/5` : ''}`;
-  $('#w-body').innerHTML = mdToHtml(d.usage || '');
-  $('#w-thread').innerHTML = '';
-  $('#w-saved').innerHTML = '';
-  $('.wcard').classList.add('ready');
-  $('#w-save').textContent = '重新解析';
-  $('#w-save').disabled = false;
-  wordMsg('这是你之前存下的笔记');
 }
 
 bindSend('#w-add', '#w-go', analyzeWord);
@@ -562,40 +558,30 @@ $('#w-cam').addEventListener('click', () => window.open(
   encodeURIComponent(wordState.word), '_blank'));
 
 $('#w-save').addEventListener('click', async (e) => {
-  if (e.target.textContent === '重新解析') { analyzeWord(wordState.word); return; }
   const btn = e.target;
+  // 从生词本进来时这个按钮是"重新解析"（重查要花额度，所以是显式动作）
+  if (btn.textContent === '重新解析') { analyzeWord(wordState.word); return; }
   btn.disabled = true;
   const r = await post('/api/word/save',
     { word: wordState.word, usage: wordState.body });
   if (r.ok) {
     btn.textContent = r.action === 'updated' ? '✓ 已更新' : '✓ 已存入';
-    refreshWordCount();
+    afterWordSaved();
   } else {
     btn.disabled = false;
     wordMsg(r.msg || '保存失败');
   }
 });
 
-$('#w-clear').addEventListener('click', () => {
+$('#w-next').addEventListener('click', () => {
   wordSetStage(1);
+  $('#w-next').classList.remove('pulse');
   $('#w-add').value = '';
   $('#w-add').focus();
 });
 
-/* 追问：复用练习页的折叠 round */
-async function askWord(question) {
-  const round = addRound(question, '#w-thread');
-  const md = $('.md', round);
-  let raw = '';
-  md.classList.add('caret');
-  await stream('/api/word/followup', { question, word: wordState.word }, (m) => {
-    if (m.delta) { raw += m.delta; md.textContent = raw; }
-    if (m.warn || m.error) wordMsg(m.warn || m.error);
-  });
-  md.classList.remove('caret');
-  if (raw.trim()) md.innerHTML = mdToHtml(raw);
-}
-bindSend('#w-more', '#w-more-send', askWord);
+bindSend('#w-more', '#w-more-send',
+  (question) => streamRound(question, '/api/word/followup', { question, word: wordState.word }));
 
 $('#w-save-note').addEventListener('click', async (e) => {
   const btn = e.target;
@@ -610,20 +596,73 @@ $('#w-save-note').addEventListener('click', async (e) => {
     return;
   }
   btn.textContent = r.summarized ? '✓ 已总结并存入生词本' : '✓ 已存入生词本';
-  // 把实际存进去的内容显示出来，别让用户存了自己没读过的东西
+  collapseWordRounds();          // 存完了，前面的讨论过程收起来，留总结当结论
   $('#w-saved').innerHTML =
     `<div class="card slide-up" style="margin-top:12px">
        <div class="label acc">${r.summarized ? '存进生词本的总结' : '存进生词本的内容'}</div>
        <div class="md"></div>
      </div>`;
   $('#w-saved .md').innerHTML = mdToHtml(r.note || '');
-  refreshWordCount();
-  $('#w-list').innerHTML = '';                 // 生词本变了，下次展开重新取
-  $('#w-book').classList.remove('open');
+  afterWordSaved();
+  // 这一轮到此为止，把"查下一个词"点亮，明确告诉用户下一步在哪
+  $('#w-next').classList.add('pulse');
 });
 
-/* 生词本：默认收起的抽屉 */
-$('#w-book').addEventListener('click', async (e) => {
+function afterWordSaved() {
+  refreshWordCount();
+  $('#w-list').innerHTML = '';        // 生词本内容变了，下次展开重新取
+  $('#w-book').classList.remove('open');
+}
+
+/* ========== 生词本：每行可就地展开，带熟练度 / 存入时间 / 操作 ========== */
+async function loadWordBook() {
+  const box = $('#w-list');
+  box.innerHTML = '<div class="hint">读取中…</div>';
+  const list = await (await fetch('/api/words')).json();
+  if (!list.length) {
+    box.innerHTML = '<div class="hint">生词本还是空的，查个词存进来吧</div>';
+    return;
+  }
+  box.innerHTML = list.map((w) => `
+    <div class="wrow" data-word="${esc(w.word)}">
+      <button class="wrow-head">
+        <span class="wrow-word en">${esc(w.word)}</span>
+        <span class="wrow-meta">${esc(w.time || '')}</span>
+        <span class="prof" title="${w.proficiency == null ? '还没测过' : '熟练度 ' + w.proficiency + '/5'}">${dots(w.proficiency)}</span>
+        <span class="chev">⌄</span>
+      </button>
+      <div class="wrow-body">
+        ${w.issue ? `<div class="wrow-issue">上次测验的问题：${esc(w.issue)}</div>` : ''}
+        <div class="card md">${mdToHtml(w.usage || '（这个词还没有笔记）')}</div>
+        <div class="row" style="margin-top:10px">
+          <button class="pill acc" data-act="test">出题测一测</button>
+          <button class="pill" data-act="review">复习并追问</button>
+          <button class="pill ghost" data-act="cam">剑桥词典 ↗</button>
+        </div>
+      </div>
+    </div>`).join('');
+
+  $$('.wrow', box).forEach((row) => {
+    $('.wrow-head', row).addEventListener('click', () => {
+      const wasOpen = row.classList.contains('open');
+      $$('.wrow', box).forEach((r) => r.classList.remove('open'));
+      if (!wasOpen) row.classList.add('open');
+    });
+    const word = row.dataset.word;
+    $('[data-act=cam]', row).addEventListener('click', () => window.open(
+      'https://dictionary.cambridge.org/dictionary/english-chinese-simplified/' +
+      encodeURIComponent(word), '_blank'));
+    $('[data-act=review]', row).addEventListener('click', () => showSavedWord(word));
+    $('[data-act=test]', row).addEventListener('click', (e) => {
+      const b = e.target, old = b.textContent;
+      b.textContent = '出题功能还没接上';
+      b.disabled = true;
+      setTimeout(() => { b.textContent = old; b.disabled = false; }, 2200);
+    });
+  });
+}
+
+$('#w-book').addEventListener('click', (e) => {
   const box = $('#w-list');
   if (box.innerHTML) {
     box.innerHTML = '';
@@ -631,23 +670,33 @@ $('#w-book').addEventListener('click', async (e) => {
     return;
   }
   e.currentTarget.classList.add('open');
-  box.innerHTML = '<div class="hint">读取中…</div>';
-  const list = await (await fetch('/api/words')).json();
-  if (!list.length) {
-    box.innerHTML = '<div class="hint">生词本还是空的，查个词存进来吧</div>';
-    return;
-  }
-  box.innerHTML = `<div class="wlist">${list.map((w) => `
-    <button data-word="${esc(w.word)}">
-      <span>${esc(w.word)}</span>
-      <span class="prof">${dots(w.proficiency)}</span>
-    </button>`).join('')}</div>`;
-  $$('#w-list button').forEach((b) => b.addEventListener('click', () => {
-    $$('#w-list button').forEach((x) => x.classList.remove('on'));
-    b.classList.add('on');
-    showSavedWord(b.dataset.word);
-  }));
+  loadWordBook();
 });
+
+/* 复习：把已存的笔记放到主区，可以接着追问 */
+async function showSavedWord(word) {
+  const d = await (await fetch('/api/words/' + encodeURIComponent(word))).json();
+  if (!d.ok) { wordMsg(d.msg || '读取失败'); return; }
+  wordState = { word: d.word, body: d.usage || '' };
+  wordSetStage(2);
+  $('#w-word').textContent = d.word;
+  $('#w-badge').textContent =
+    `存于 ${d.time || '未知时间'}${d.proficiency != null ? ` · 熟练度 ${d.proficiency}/5` : ' · 还没测过'}`;
+  $('#w-thread').innerHTML = '';
+  $('#w-saved').innerHTML = '';
+  $('#w-next').classList.remove('pulse');
+  // 已存的笔记也放进线索里当第一条，这样追问时它会自动收起
+  const round = addRound('已存的笔记', '#w-thread');
+  $('.md', round).innerHTML = mdToHtml(d.usage || '');
+  $('.wcard').classList.add('ready');
+  $('#w-save').textContent = '重新解析';
+  $('#w-save').disabled = false;
+  $('#w-save-note').textContent = '总结这个词，存进生词本';
+  $('#w-save-note').disabled = false;
+  $('#w-book').classList.remove('open');
+  $('#w-list').innerHTML = '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
 
 async function refreshWordCount() {
   const list = await (await fetch('/api/words')).json();

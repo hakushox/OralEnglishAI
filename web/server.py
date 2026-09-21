@@ -240,14 +240,17 @@ async def words():
 
     proficiency 可能不存在 —— 只有做过「出题练一练」的词才有，前端要有"未测过"态。
     """
+    # 带上 usage，生词本抽屉里点开就能就地看笔记，不用再发一次请求。
+    # 数据量小（几十条 × 几百字），一次给完最省事。
     return [
         {
             'word': w.get('word', ''),
             'time': w.get('time', ''),
             'proficiency': w.get('proficiency'),
             'issue': w.get('issue', ''),
+            'usage': w.get('usage', ''),
         }
-        for w in store.load_words()
+        for w in reversed(store.load_words())      # 最近存的排前面
     ]
 
 
