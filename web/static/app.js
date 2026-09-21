@@ -529,8 +529,6 @@ async function analyzeWord(word) {
   $('#w-saved').innerHTML = '';
   $('.wcard').classList.remove('ready');
   $('#w-next').classList.remove('pulse');
-  $('#w-save').textContent = '存进生词本';
-  $('#w-save').disabled = false;
   $('#w-save-note').textContent = '总结这个词，存进生词本';
   $('#w-save-note').disabled = false;
   wordMsg('');
@@ -559,22 +557,6 @@ $('#w-play').addEventListener('click', (e) =>
 $('#w-cam').addEventListener('click', () => window.open(
   'https://dictionary.cambridge.org/dictionary/english-chinese-simplified/' +
   encodeURIComponent(wordState.word), '_blank'));
-
-$('#w-save').addEventListener('click', async (e) => {
-  const btn = e.target;
-  // 从生词本进来时这个按钮是"重新解析"（重查要花额度，所以是显式动作）
-  if (btn.textContent === '重新解析') { analyzeWord(wordState.word); return; }
-  btn.disabled = true;
-  const r = await post('/api/word/save',
-    { word: wordState.word, usage: wordState.body });
-  if (r.ok) {
-    btn.textContent = r.action === 'updated' ? '✓ 已更新' : '✓ 已存入';
-    afterWordSaved();
-  } else {
-    btn.disabled = false;
-    wordMsg(r.msg || '保存失败');
-  }
-});
 
 $('#w-next').addEventListener('click', () => {
   wordSetStage(1);
@@ -613,9 +595,7 @@ $('#w-save-note').addEventListener('click', async (e) => {
 
 function afterWordSaved() {
   refreshWordCount();
-  $('#w-deck').innerHTML = '';        // 生词本内容变了，下次展开重新取
-  $('#w-deckbar').hidden = true;
-  $('#w-book').classList.remove('open');
+  closeWordBook();                    // 生词本内容变了，下次展开重新取
 }
 
 /* ========== 生词本：可横滑的卡片牌组 ========== */
@@ -651,68 +631,121 @@ const deckStars = (s) => s
   ? `<span class="stars">${esc(s)}</span>`
   : '<span class="stars" style="color:var(--text-5)" title="解析里没给星级">—</span>';
 
+let deckIndex = 0;
+
 async function loadWordBook() {
   const deck = $('#w-deck');
-  const bar = $('#w-deckbar');
-  deck.innerHTML = '<div class="hint">读取中…</div>';
+  deck.innerHTML = '<div class="hint" style="padding:10px 2px">读取中…</div>';
   const list = await (await fetch('/api/words')).json();
+  $('#w-pager').hidden = !list.length;
+  $('#w-foot').hidden = !list.length;
   if (!list.length) {
-    bar.hidden = true;
-    deck.innerHTML = '<div class="hint">生词本还是空的，查个词存进来吧</div>';
+    deck.innerHTML = '<div class="hint" style="padding:10px 2px">生词本还是空的，查个词存进来吧</div>';
     return;
   }
-  bar.hidden = false;
-  deck.innerHTML = list.map((w) => `
-    <button class="wtile" data-word="${esc(w.word)}" title="点击复习并追问">
-      <div class="wtile-top">
-        ${deckStars(w.stars)}
-        <span class="wtile-prof">${dots(w.proficiency)}</span>
-      </div>
-      <div class="wtile-word en">${esc(w.word)}</div>
-      <div class="wtile-gloss">${esc(glossOf(w.usage))}</div>
-      <div class="wtile-foot">
-        <span>${esc((w.time || '').slice(0, 10))}</span>
-        <span class="wtile-test" data-test>测一测</span>
-      </div>
-    </button>`).join('');
 
-  $$('.wtile', deck).forEach((tile) => {
-    tile.addEventListener('click', (e) => {
-      if (e.target.hasAttribute('data-test')) {
-        e.stopPropagation();
-        const b = e.target, old = b.textContent;
-        b.textContent = '还没接上';
-        setTimeout(() => { b.textContent = old; }, 1800);
-        return;
-      }
-      showSavedWord(tile.dataset.word);
+  deck.innerHTML = list.map((w) => `
+    <div class="wslide" data-word="${esc(w.word)}" data-id="${w.id}">
+      <div class="wbig">
+        <div class="wbig-top">
+          ${deckStars(w.stars)}
+          <span class="wbig-prof" title="${w.proficiency == null ? '还没测过' : '熟练度 ' + w.proficiency + '/5'}">${dots(w.proficiency)}</span>
+        </div>
+        <div class="wbig-word en">${esc(w.word)}</div>
+        <div class="wbig-gloss">${esc(glossOf(w.usage))}</div>
+        <div class="wbig-foot">
+          <span>存于 ${esc(w.time || '未知')}</span>
+          ${w.issue ? `<span title="上次测验的问题">· ${esc(w.issue.slice(0, 20))}</span>` : ''}
+          <span class="chev">⌄</span>
+        </div>
+        <div class="wbig-detail">
+          <div class="wbig-detail-inner">
+            <div class="card md">${mdToHtml(w.usage || '（这个词还没有笔记）')}</div>
+            <div class="row" style="margin-top:12px">
+              <button class="pill acc" data-act="review">复习并追问</button>
+              <button class="pill" data-act="test">出题测一测</button>
+              <button class="pill" data-act="del"
+                      style="margin-left:auto;background:#5a2523;color:#f0c9c6">删除</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`).join('');
+
+  const slides = $$('.wslide', deck);
+
+  slides.forEach((slide) => {
+    // 点卡片本体 = 往上提拉展开 / 收起；详情里的按钮各管各的
+    $('.wbig', slide).addEventListener('click', (e) => {
+      if (e.target.closest('[data-act]')) return;
+      const wasUp = slide.classList.contains('up');
+      slides.forEach((x) => x.classList.remove('up'));
+      if (!wasUp) slide.classList.add('up');
+    });
+
+    const word = slide.dataset.word;
+    $('[data-act=review]', slide).addEventListener('click', () => showSavedWord(word));
+    $('[data-act=test]', slide).addEventListener('click', (e) => {
+      const b = e.target, old = b.textContent;
+      b.textContent = '出题还没接上';
+      b.disabled = true;
+      setTimeout(() => { b.textContent = old; b.disabled = false; }, 2000);
+    });
+    // 删除藏在展开后的动作里 —— 必须先点开看清是哪个词才能删，天然的一道闸
+    $('[data-act=del]', slide).addEventListener('click', async () => {
+      const r = await post('/api/archive/delete',
+        { kind: 'word', id: Number(slide.dataset.id) });
+      if (!r.ok) { toast(r.msg || '删除失败'); return; }
+      toast(`已删除「${word}」`, '撤销', async () => {
+        const u = await post('/api/archive/undo', {});
+        if (u.ok) { await loadWordBook(); refreshWordCount(); }
+        else toast(u.msg || '撤销失败');
+      });
+      await loadWordBook();
+      refreshWordCount();
     });
   });
 
-  // ‹ › 和位置指示：横滑本身靠原生 scroll-snap，这里只给鼠标用户补个入口
-  const tiles = $$('.wtile', deck);
-  const step = () => (tiles[0] ? tiles[0].offsetWidth + 12 : 208);
-  const syncPos = () => {
-    const i = Math.round(deck.scrollLeft / step());
-    $('#w-pos').textContent = `${Math.min(i + 1, tiles.length)} / ${tiles.length}`;
-    $('#w-prev').disabled = deck.scrollLeft < 4;
-    $('#w-next-card').disabled =
-      deck.scrollLeft + deck.clientWidth >= deck.scrollWidth - 4;
+  // 位置指示 + 圆点，可以直接点圆点跳
+  // 注意别叫 dots —— 外层有个同名的熟练度渲染函数 dots()，
+  // 局部 const 会遮蔽它并让模板里的调用落进 TDZ，整个渲染直接挂掉
+  const dotBox = $('#w-dots');
+  dotBox.innerHTML = list.map(() => '<i></i>').join('');
+  const width = () => deck.clientWidth;
+  const sync = () => {
+    deckIndex = Math.round(deck.scrollLeft / Math.max(1, width()));
+    $('#w-pos').textContent = `${deckIndex + 1} / ${list.length}`;
+    $$('i', dotBox).forEach((d, k) => d.classList.toggle('on', k === deckIndex));
+    $('#w-prev').disabled = deckIndex <= 0;
+    $('#w-next-card').disabled = deckIndex >= list.length - 1;
   };
-  deck.onscroll = syncPos;
-  $('#w-prev').onclick = () => deck.scrollBy({ left: -step(), behavior: 'smooth' });
-  $('#w-next-card').onclick = () => deck.scrollBy({ left: step(), behavior: 'smooth' });
-  syncPos();
+  const go = (k) => deck.scrollTo({
+    left: Math.max(0, Math.min(list.length - 1, k)) * width(), behavior: 'smooth',
+  });
+  deck.onscroll = sync;
+  $('#w-prev').onclick = () => go(deckIndex - 1);
+  $('#w-next-card').onclick = () => go(deckIndex + 1);
+  $$('i', dotBox).forEach((d, k) => d.addEventListener('click', () => go(k)));
+  sync();
+
+  // 键盘左右翻页：只在抽屉开着、且焦点不在输入框里时生效
+  document.onkeydown = (e) => {
+    if ($('#w-deck').innerHTML === '' || $('#v-word').classList.contains('on') === false) return;
+    if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); go(deckIndex - 1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); go(deckIndex + 1); }
+  };
+}
+
+function closeWordBook() {
+  $('#w-deck').innerHTML = '';
+  $('#w-pager').hidden = true;
+  $('#w-foot').hidden = true;
+  $('#w-book').classList.remove('open');
 }
 
 $('#w-book').addEventListener('click', (e) => {
-  const deck = $('#w-deck');
-  if (deck.innerHTML) {
-    deck.innerHTML = '';
-    $('#w-deckbar').hidden = true;
-    e.currentTarget.classList.remove('open');
-    return;
-  }
+  if ($('#w-deck').innerHTML) { closeWordBook(); return; }
   e.currentTarget.classList.add('open');
   loadWordBook();
 });
@@ -734,13 +767,9 @@ async function showSavedWord(word) {
   const round = addRound('已存的笔记', '#w-thread');
   $('.md', round).innerHTML = mdToHtml(d.usage || '');
   $('.wcard').classList.add('ready');
-  $('#w-save').textContent = '重新解析';
-  $('#w-save').disabled = false;
   $('#w-save-note').textContent = '总结这个词，存进生词本';
   $('#w-save-note').disabled = false;
-  $('#w-book').classList.remove('open');
-  $('#w-deck').innerHTML = '';
-  $('#w-deckbar').hidden = true;
+  closeWordBook();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 

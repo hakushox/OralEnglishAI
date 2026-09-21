@@ -354,62 +354,79 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 /* 星级：地道/高级程度，从解析正文里抽出来单独显示 */
 .stars { color: var(--accent); font-size: 13px; letter-spacing: 1px; }
 
-/* ============ 生词本：可横滑的卡片牌组 ============
-   用原生 overflow-x + scroll-snap —— 触控板横滑、触屏滑动、拖动全都白送，
-   不用自己写手势。另外给鼠标用户配 ‹ › 按钮。 */
+/* ============ 生词本：一次一张的翻页幻灯片 ============
+   滑动靠原生 scroll-snap（触控板/触屏/拖动全都白送），每张 100% 宽、居中吸附；
+   ‹ › 只是 scrollBy(clientWidth) 的入口，键盘 ← → 同理。 */
+.pager { display: flex; align-items: center; gap: 8px; }
+.pager-nav {
+  flex: none; width: 30px; height: 30px; border-radius: 50%;
+  background: var(--surface); border: 0.5px solid var(--border);
+  color: var(--text-3); font-size: 17px; line-height: 1; cursor: pointer;
+  transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+.pager-nav:hover { color: var(--text); border-color: var(--accent-dim); }
+.pager-nav[disabled] { opacity: 0.25; cursor: default; }
+
 .deck {
-  display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory;
-  padding: 4px 2px 14px; margin: 0 -2px;
+  flex: 1; min-width: 0;
+  display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
   scrollbar-width: none;
 }
 .deck::-webkit-scrollbar { display: none; }
+.wslide { flex: 0 0 100%; scroll-snap-align: center; padding: 6px 2px 10px; }
 
-.wtile {
-  flex: 0 0 196px; scroll-snap-align: start;
+.wbig {
   background: var(--surface); border: 0.5px solid var(--border);
-  border-radius: 12px; padding: 14px 15px 12px;
-  display: flex; flex-direction: column; gap: 7px;
-  cursor: pointer; text-align: left; font: inherit;
-  transition: border-color 0.18s var(--ease), transform 0.18s var(--ease),
-              background 0.18s var(--ease);
+  border-radius: 14px; padding: 20px 22px;
+  cursor: pointer;
+  transition: transform 0.32s var(--ease), border-color 0.2s var(--ease),
+              box-shadow 0.32s var(--ease);
 }
-.wtile:hover {
-  border-color: var(--accent-dim); background: var(--surface-2);
-  transform: translateY(-3px);
+.wbig:hover { border-color: var(--accent-dim); }
+/* 点击后往上提拉：卡片抬起 + 投影变重，详情从下面顶出来 */
+.wslide.up .wbig {
+  transform: translateY(-10px);
+  border-color: var(--accent-dim);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
 }
-.wtile-top { display: flex; align-items: center; gap: 8px; min-height: 18px; }
-.wtile-top .stars { font-size: 11px; }
-.wtile-prof { margin-left: auto; font-size: 10px; letter-spacing: 1px; }
-.wtile-word {
-  font-size: 21px; color: var(--text); line-height: 1.25;
-  word-break: break-word;
-}
-.wtile-gloss {
-  font-size: 12px; color: var(--text-3); line-height: 1.55;
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
-  overflow: hidden; min-height: 54px;
-}
-.wtile-foot {
-  display: flex; align-items: center; gap: 8px;
-  font-size: 10px; color: var(--text-5);
-  padding-top: 8px; border-top: 0.5px solid var(--border);
-}
-.wtile-test {
-  margin-left: auto; background: none; border: none; cursor: pointer;
-  color: var(--accent-dim); font: inherit; font-size: 11px; padding: 2px 4px;
-}
-.wtile-test:hover { color: var(--accent); }
 
-.deck-bar { display: flex; align-items: center; gap: 10px; margin: 8px 0 2px; }
-.deck-nav {
-  width: 26px; height: 26px; border-radius: 50%;
-  background: var(--surface); border: 0.5px solid var(--border);
-  color: var(--text-3); font-size: 15px; line-height: 1; cursor: pointer;
-  transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+.wbig-top { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.wbig-top .stars { font-size: 14px; }
+.wbig-prof { margin-left: auto; font-size: 11px; letter-spacing: 1px; }
+.wbig-word { font-size: 30px; color: var(--text); line-height: 1.2; word-break: break-word; }
+.wbig-gloss { font-size: 14px; color: var(--text-2); line-height: 1.6; margin-top: 8px; }
+.wbig-foot {
+  display: flex; align-items: center; gap: 10px; margin-top: 14px;
+  font-size: 11px; color: var(--text-5);
 }
-.deck-nav:hover { color: var(--text); border-color: var(--border-strong, #3a3a41); }
-.deck-nav[disabled] { opacity: 0.3; cursor: default; }
-.deck-pos { font-size: 11px; color: var(--text-5); }
+.wbig-foot .chev { margin-left: auto; transition: transform 0.28s var(--ease); }
+.wslide.up .wbig-foot .chev { transform: rotate(180deg); }
+
+.wbig-detail {
+  max-height: 0; overflow: hidden;
+  transition: max-height 0.38s var(--ease), opacity 0.28s var(--ease);
+  opacity: 0;
+}
+.wslide.up .wbig-detail { max-height: 1600px; opacity: 1; }
+.wbig-detail-inner {
+  margin-top: 14px; padding-top: 14px;
+  border-top: 0.5px solid var(--border);
+}
+
+.pager-foot {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 2px; padding-left: 38px;
+}
+.deck-pos { font-size: 11px; color: var(--text-5); flex: none; }
+.dots { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
+.dots i {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--border); cursor: pointer;
+  transition: background 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.dots i.on { background: var(--accent); transform: scale(1.35); }
+
+.stars { color: var(--accent); font-size: 13px; letter-spacing: 1px; }
 
 /* 存完之后点亮「查下一个词」：告诉用户这一轮结束了，下一步在这儿 */
 .invite.pulse { color: var(--accent-text); }

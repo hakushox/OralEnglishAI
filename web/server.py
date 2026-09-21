@@ -242,8 +242,13 @@ async def words():
     """
     # 带上 usage，生词本抽屉里点开就能就地看笔记，不用再发一次请求。
     # 数据量小（几十条 × 几百字），一次给完最省事。
+    raw = store.load_words()
+    total = len(raw)
     return [
         {
+            # id 是在 WORDS_SUMMARY_LOG 里的真实下标 —— 下面 reversed 过，
+            # 显示顺序跟存储顺序相反，删除必须按真实下标走
+            'id': total - 1 - i,
             'word': w.get('word', ''),
             'time': w.get('time', ''),
             'proficiency': w.get('proficiency'),
@@ -252,7 +257,7 @@ async def words():
             # 老记录没有 stars 字段，退回从正文里现抽，免得需要数据迁移
             'stars': w.get('stars') or store.extract_stars(w.get('usage', '')),
         }
-        for w in reversed(store.load_words())      # 最近存的排前面
+        for i, w in enumerate(reversed(raw))       # 最近存的排前面
     ]
 
 
