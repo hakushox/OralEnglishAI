@@ -162,6 +162,26 @@ Linux 是 `~/.config`）。里面是 `Oral_English_Exercise.json`（造句记录
 | `web/static/style.css` | 设计 token 全在顶部 `:root`，改配色只动那一块 |
 | `web/static/index.html` | 单页，五个 `<section class="view">` |
 
+## 页面层级规范（所有模块统一，新模块直接套）
+
+**主区 = 输入 + 当前结果**，最大最亮，占视觉中心：
+
+- `.hero` 包住输入区，`.hero-label` 是上方的小标签（「查一个词」这种）
+- `.hero .field input` 高 54px、字号 17px；`.hero-btn` 是加大的主按钮
+
+**次级板块 = 生词本 / 档案这类附属功能**，放主区下方，视觉上退后一层：
+
+- `.section` 底色用 `--sunken`（`#121215`，比页面底色 `#16161a` 更暗）
+- `.section-head` 是真正的板块标题（`.section-title` + `.section-count` + 折叠箭头），
+  不要用小号灰字的链接充当标题
+- `.section-body` 有横向裁切，里面的轮播侧卡会「从板块边缘探出来」而不是溢出
+- 板块里的卡片要用更亮的面（`--surface`）才浮得起来
+
+**手势**：不要用拖拽翻页 —— 拖一点点就劫持了点击，卡片点不开，
+触控鼠标尤其难用。用横向滚轮（`wheel` 的 `deltaX`），
+触控板双指横滑和 Magic Mouse 横扫都是原生手势，且跟点击零冲突；
+累积到阈值才翻一张并加冷却，免得一次长滑飞过好几张。
+
 ## 写新代码的约定
 
 **AI 调用必须「云端优先 + 本地兜底」。** 云端在 groq → cloudflare 之间轮询换模型，

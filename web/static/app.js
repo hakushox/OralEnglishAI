@@ -752,43 +752,27 @@ async function loadWordBook() {
   $('#w-next-card').onclick = () => go(deckIndex + 1);
   $$('i', dotBox).forEach((d, k) => d.addEventListener('click', () => go(k)));
 
-  /* 横滑翻页：卡片是绝对定位的，没有原生滚动可用，所以自己处理 pointer 拖动。
-     拖动中实时跟手（整组跟着位移），松手按距离决定翻不翻。 */
-  let dragX = null, dragged = 0;
-  deck.onpointerdown = (e) => {
-    if (e.target.closest('[data-act]')) return;
-    dragX = e.clientX; dragged = 0;
-    slides.forEach((sl) => { sl.style.transition = 'none'; });
+  /* 翻页手势：只吃「横向滚动」，不做拖拽。
+     拖拽会劫持点击（拖一点点就变成拖动，点不开卡片），对触控鼠标尤其难用。
+     横滚对触控板双指横滑、Magic Mouse 横扫都是原生手势，且跟点击完全不冲突。
+     累积到阈值才翻一张，并加冷却，免得一次长滑飞过好几张。 */
+  let wheelAcc = 0, wheelLock = 0;
+  deck.onwheel = (e) => {
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;   // 纵向滚动交给页面
+    e.preventDefault();
+    if (Date.now() < wheelLock) return;
+    wheelAcc += e.deltaX;
+    if (Math.abs(wheelAcc) > 45) {
+      go(deckIndex + Math.sign(wheelAcc));
+      wheelAcc = 0;
+      wheelLock = Date.now() + 260;
+    }
   };
-  deck.onpointermove = (e) => {
-    if (dragX === null) return;
-    dragged = e.clientX - dragX;
-    const w = deck.clientWidth || 1;
-    slides.forEach((sl, i) => {
-      const d = i - deckIndex - (-dragged / w) * 1.6;   // 跟手，但阻尼一下
-      const ad = Math.abs(d);
-      sl.style.transform =
-        `translateX(-50%) translateX(${d * 47}%) scale(${Math.max(0.78, 1 - ad * 0.1)})`;
-      sl.style.opacity = ad > 2.4 ? 0 : String(Math.max(0, 1 - ad * 0.22));
-      sl.style.zIndex = String(50 - Math.round(ad));
-    });
-  };
-  const dragEnd = () => {
-    if (dragX === null) return;
-    dragX = null;
-    slides.forEach((sl) => { sl.style.transition = ''; });
-    if (dragged < -40) go(deckIndex + 1);
-    else if (dragged > 40) go(deckIndex - 1);
-    else layout();
-    dragged = 0;
-  };
-  deck.onpointerup = dragEnd;
-  deck.onpointercancel = dragEnd;
-  deck.onpointerleave = dragEnd;
 
   // 键盘左右翻页：只在单词页、抽屉开着、焦点不在输入框时生效
   document.onkeydown = (e) => {
-    if (!$('#v-word').classList.contains('on') || !$('#w-deck').querySelector('.wslide')) return;
+    if (!$('#v-word').classList.contains('on')) return;
+    if (!$('#w-section').classList.contains('open')) return;
     if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
     if (e.key === 'ArrowLeft') { e.preventDefault(); go(deckIndex - 1); }
     if (e.key === 'ArrowRight') { e.preventDefault(); go(deckIndex + 1); }
@@ -802,12 +786,12 @@ function closeWordBook() {
   $('#w-deck').innerHTML = '';
   $('#w-pager').hidden = true;
   $('#w-foot').hidden = true;
-  $('#w-book').classList.remove('open');
+  $('#w-section').classList.remove('open');
 }
 
-$('#w-book').addEventListener('click', (e) => {
-  if ($('#w-deck').innerHTML) { closeWordBook(); return; }
-  e.currentTarget.classList.add('open');
+$('#w-book').addEventListener('click', () => {
+  if ($('#w-section').classList.contains('open')) { closeWordBook(); return; }
+  $('#w-section').classList.add('open');
   loadWordBook();
 });
 
@@ -841,7 +825,7 @@ async function showSavedWord(word) {
 
 async function refreshWordCount() {
   const list = await (await fetch('/api/words')).json();
-  $('#w-count').textContent = list.length ? ` (${list.length})` : '（空）';
+  $('#w-count').textContent = list.length ? `${list.length} 个词` : '还是空的';
 }
 
 /* ==================== 长难句 ==================== */

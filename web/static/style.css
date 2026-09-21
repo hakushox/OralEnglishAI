@@ -1,6 +1,7 @@
 /* ============ 设计 token ============ */
 :root {
   --bg: #16161a;
+  --sunken: #121215;          /* 比页面底色更暗，用于"次级功能板块"，视觉上退后 */
   --surface: #1d1d21;
   --surface-2: #23232a;
   --border: #2c2c31;
@@ -101,6 +102,50 @@ textarea:focus, input[type=text]:focus {
   outline: none; border-color: var(--accent-dim);
 }
 textarea::placeholder, input::placeholder { color: var(--text-5); }
+
+/* ============ 页面层级规范（所有模块统一） ============
+   主区 = 输入 + 当前结果，最大最亮，占据视觉中心。
+   次级板块 = 生词本 / 档案这类附属功能，放在主区下方的「下沉面」里，
+   底色比页面更暗、字更小、有明确的板块标题，视觉上退后一层。
+   新模块直接套 .hero 和 .section，不要各写一套。 */
+
+.hero { margin: 6px 0 2px; }
+.hero-label {
+  font-size: 11px; letter-spacing: 0.1em;
+  color: var(--text-4); margin-bottom: 11px;
+}
+.hero .field input { height: 54px; font-size: 17px; padding: 0 48px 0 19px; }
+.hero .mic-btn { right: 12px; }
+.hero-btn { padding: 15px 28px; font-size: 15px; border-radius: 14px; }
+
+.section {
+  margin-top: 40px; padding: 2px 18px 6px;
+  background: var(--sunken); border-radius: 16px;
+  border: 0.5px solid #1b1b1f;
+}
+.section-head {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  background: none; border: none; cursor: pointer; text-align: left;
+  font: inherit; padding: 16px 2px; color: var(--text-4);
+  transition: color 0.15s var(--ease);
+}
+.section-head:hover { color: var(--text-2); }
+.section-title { font-size: 14px; color: var(--text-2); letter-spacing: 0.02em; }
+.section-count { font-size: 12px; color: var(--text-5); }
+.section-head .chev {
+  margin-left: auto; font-size: 13px; color: var(--text-5);
+  transition: transform 0.28s var(--ease);
+}
+.section.open .section-head .chev { transform: rotate(180deg); }
+.section.open .section-title { color: var(--text); }
+.section-body {
+  display: none; padding: 0 0 14px;
+  /* 横向裁切：轮播的侧卡要"从板块边缘探出来"，而不是溢出到面板外面。
+     纵向不受影响（overflow 只裁超出盒子的部分，盒子高度还是随内容长）。 */
+  overflow: hidden;
+  margin: 0 -18px; padding-left: 18px; padding-right: 18px;
+}
+.section.open .section-body { display: block; animation: slideup 0.4s var(--ease) both; }
 
 /* 输入框 + 发送按钮：所有模块统一用这个，别再单独写内联尺寸 */
 .inrow { display: flex; align-items: center; gap: 10px; }
@@ -365,17 +410,20 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
    scroll-snap 做不到这种重叠（吸附要求卡片占住布局宽度），所以手势自己写。 */
 .pager { display: flex; align-items: center; gap: 6px; }
 .pager-nav {
-  flex: none; width: 30px; height: 30px; border-radius: 50%; z-index: 60;
-  background: var(--surface); border: 0.5px solid var(--border);
-  color: var(--text-3); font-size: 17px; line-height: 1; cursor: pointer;
-  transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
+  flex: none; width: 34px; height: 34px; border-radius: 50%; z-index: 60;
+  background: var(--surface-2); border: 0.5px solid var(--border);
+  color: var(--text-2); font-size: 18px; line-height: 1; cursor: pointer;
+  transition: color 0.15s var(--ease), background 0.15s var(--ease),
+              border-color 0.15s var(--ease);
 }
-.pager-nav:hover { color: var(--text); border-color: var(--accent-dim); }
+.pager-nav:hover {
+  color: var(--accent-on); background: var(--accent); border-color: var(--accent);
+}
 .pager-nav[disabled] { opacity: 0.25; cursor: default; }
 
 .cover {
   position: relative; flex: 1; min-width: 0;
-  height: 232px;
+  height: 206px;
   /* 不用 overflow:hidden —— 侧卡要溢出容器往两边露出来才有层叠感；
      纵向靠 padding 留白，横向让它溢出 .shell 的留白区 */
   overflow: visible;
@@ -383,13 +431,14 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
   touch-action: pan-y;          /* 纵向留给页面滚动，横向自己处理 */
 }
 .wslide {
-  position: absolute; left: 50%; top: 4px; width: 66%;
+  position: absolute; left: 50%; top: 4px; width: 62%;
   transition: transform 0.42s var(--ease), opacity 0.35s var(--ease);
   will-change: transform;
 }
 
 .wbig {
-  background: var(--surface); border: 0.5px solid var(--border);
+  /* 板块底色是下沉的 --sunken，卡片得用更亮的面才浮得起来 */
+  background: var(--surface); border: 0.5px solid #2f2f36;
   border-radius: 14px; padding: 18px 20px;
   cursor: pointer; user-select: none;
   transition: border-color 0.2s var(--ease), box-shadow 0.32s var(--ease);
@@ -429,7 +478,7 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 
 .pager-foot {
   display: flex; align-items: center; gap: 12px;
-  margin-top: 6px; padding-left: 36px;
+  margin-top: 4px; padding: 0 40px 4px;
 }
 .deck-pos { font-size: 11px; color: var(--text-5); flex: none; }
 .dots { display: flex; gap: 6px; flex: 1; flex-wrap: wrap; }
