@@ -93,22 +93,64 @@
     </div>
   </section>
 
-  <!-- ==================== 单词 ==================== -->
+  <!-- ==================== 单词 ====================
+       主次：查词框和单词卡是主角，生词本是次要的、默认收起的抽屉。
+       进来时不自动打开任何词 —— 那是次要内容抢主位。 -->
   <section class="view" id="v-word">
-    <div class="inrow" style="margin-bottom:24px">
-      <div class="field single">
-        <input type="text" id="w-add" placeholder="输入想查的单词">
-        <button class="mic-btn" data-mic="#w-add" aria-label="语音输入">🎙</button>
-        <div class="wave" data-wave></div>
+    <div class="stage" id="w-stage" data-stage="1">
+
+      <div class="inrow">
+        <div class="field single">
+          <input type="text" id="w-add" placeholder="输入想查的单词或短语">
+          <button class="mic-btn" data-mic="#w-add" aria-label="语音输入">🎙</button>
+          <div class="wave" data-wave></div>
+        </div>
+        <button class="pill acc" id="w-go">查询</button>
       </div>
-      <button class="pill acc" id="w-go">查询</button>
-    </div>
-    <div class="two-col">
-      <div>
-        <div class="label">生词本</div>
-        <div class="wlist" id="w-list"></div>
+
+      <!-- ① 空态：只在还没查过时出现 -->
+      <div class="st1 empty-hint">
+        <div class="hint">查过的词可以存进生词本，之后能出题自测</div>
       </div>
-      <div id="w-detail"></div>
+
+      <!-- ② 单词卡 -->
+      <div class="st2up wcard">
+        <div class="wcard-head">
+          <span class="wcard-word en" id="w-word"></span>
+          <button class="ico" id="w-play" aria-label="朗读这个词">🔊</button>
+          <span class="wcard-badge" id="w-badge"></span>
+          <button class="pill ghost" id="w-cam">剑桥词典 ↗</button>
+          <button class="pill" id="w-save">存进生词本</button>
+        </div>
+        <div class="card md" id="w-body"></div>
+
+        <!-- 追问线索：跟练习页同一套折叠 round -->
+        <div class="thread" id="w-thread"></div>
+
+        <div class="w-ready">
+          <div class="inrow" style="margin-top:14px">
+            <div class="field single">
+              <input type="text" id="w-more" placeholder="关于这个词还有什么不解？">
+              <button class="mic-btn" data-mic="#w-more" aria-label="语音输入">🎙</button>
+              <div class="wave" data-wave></div>
+            </div>
+            <button class="pill acc" id="w-more-send">追问</button>
+          </div>
+          <div class="row" style="margin-top:14px">
+            <button class="pill acc big" id="w-save-note">总结这个词，存进生词本</button>
+            <button class="invite subtle" id="w-clear" style="margin-left:auto">查下一个词<span class="chev">⌄</span></button>
+          </div>
+          <div id="w-saved"></div>
+        </div>
+        <div class="row" style="margin-top:8px"><span class="hint" id="w-msg"></span></div>
+      </div>
+
+      <!-- 生词本：次要，默认收起 -->
+      <div class="wbook">
+        <button class="invite subtle" id="w-book">我的生词本<span id="w-count"></span><span class="chev">⌄</span></button>
+        <div id="w-list"></div>
+      </div>
+
     </div>
   </section>
 

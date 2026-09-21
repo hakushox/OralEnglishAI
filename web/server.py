@@ -236,19 +236,50 @@ def analyze_patterns():
 
 @app.get('/api/words')
 async def words():
-    """MOCK：真实版本读 WORDS_SUMMARY_LOG（store.load_words 已就绪，等界面对接）"""
-    return MOCK_WORDS
+    """生词本列表。已经是真实数据（store.load_words 读 WORDS_SUMMARY_LOG）。
+
+    proficiency 可能不存在 —— 只有做过「出题练一练」的词才有，前端要有"未测过"态。
+    """
+    return [
+        {
+            'word': w.get('word', ''),
+            'time': w.get('time', ''),
+            'proficiency': w.get('proficiency'),
+            'issue': w.get('issue', ''),
+        }
+        for w in store.load_words()
+    ]
 
 
 @app.get('/api/words/{word}')
-async def word_detail(word: str):
-    """MOCK：真实版本走 review.get_word_usage()"""
-    return MOCK_WORD_DETAIL.get(word, {
-        'word': word,
-        'ipa': '/—/',
-        'usage': '（这个词还没有假数据，接真实模型后会现查。）',
-        'examples': ['Example sentence goes here.'],
-    })
+async def word_note(word: str):
+    """读某个词**已经存下来的笔记**（不是重新解析）。真实数据。"""
+    for w in store.load_words():
+        if w.get('word', '').lower() == word.lower():
+            return {'ok': True, **w}
+    return {'ok': False, 'msg': '生词本里没有这个词'}
+
+
+@app.post('/api/word/analyze')
+async def word_analyze(payload: dict = Body(...)):
+    """MOCK：真实版本走 review.WORD_PARSE_SYSTEM_PROMPT。
+
+    注意返回的是**一整段 markdown**，跟 review.py 那个 prompt 的输出格式一致
+    （六段式：音标词性 / 释义例句 / 常见搭配 / 用法提示 / 记忆逻辑 / 词汇拓展），
+    不是拆好的字段 —— 前端按 markdown 渲染，接真时只换这个函数体。
+    """
+    word = (payload.get('word') or '').strip()
+    text = MOCK_WORD_MD.get(word.lower(), MOCK_WORD_MD_FALLBACK.format(word=word))
+    return await mock_ndjson(list(text), delay=0.006)
+
+
+@app.post('/api/word/followup')
+async def word_followup(payload: dict = Body(...)):
+    """MOCK：真实版本同样走 WORD_PARSE_SYSTEM_PROMPT + FOLLOWUP_GUARD"""
+    q = (payload.get('question') or '').strip()
+    text = f'（占位回答）关于"{q}"：接真实模型后这里会基于上面的解析继续回答，' \
+           '并且会带上 FOLLOWUP_GUARD，避免把六段式分析重跑一遍。'
+    return await mock_ndjson(list(text), delay=0.012)
 
 
 @app.post('/api/parse')
@@ -298,36 +329,39 @@ async def lookup(word: str):
     })
 
 
-MOCK_WORDS = [
-    {'word': 'subtle', 'proficiency': 3},
-    {'word': 'bound to', 'proficiency': 2},
-    {'word': 'hold up', 'proficiency': 1},
-    {'word': 'rather', 'proficiency': 4},
-]
+MOCK_WORD_MD = {
+    'subtle': """1. **单词**：subtle */ˈsʌt.əl/* adj. — 口语书面都常用。高级程度 ★★★★☆
 
-MOCK_WORD_DETAIL = {
-    'subtle': {
-        'word': 'subtle', 'ipa': '/ˈsʌtl/',
-        'usage': '不易察觉的、微妙的。常修饰 difference、change、hint。注意 b 不发音。',
-        'examples': ["There's a subtle difference between the two.",
-                     'She gave me a subtle hint that it was time to leave.'],
-    },
-    'bound to': {
-        'word': 'bound to', 'ipa': '/baʊnd tuː/',
-        'usage': '注定会、必然会。语气比 will 强，带"拦不住"的意味。',
-        'examples': ["You practice every day — you're bound to get better."],
-    },
-    'hold up': {
-        'word': 'hold up', 'ipa': '/hoʊld ʌp/',
-        'usage': '多义：①拖延、耽搁 ②撑住、站得住脚 ③抢劫。口语里①最常见。',
-        'examples': ["Sorry I'm late — traffic held me up."],
-    },
-    'rather': {
-        'word': 'rather', 'ipa': '/ˈræðər/',
-        'usage': '①相当、颇（程度副词，比 quite 更含蓄）②宁愿（would rather）。',
-        'examples': ['It was rather cold for June.'],
-    },
+2. **释义**
+- 不易察觉的、微妙的 — *so slight as to be difficult to notice*
+  例：There's a **subtle** difference between the two.
+- （手法）巧妙的、不直接的 — *achieved in a clever way*
+  例：She gave me a **subtle** hint that it was time to leave.
+
+3. **常见搭配**
+| 搭配 | 说明 |
+|---|---|
+| subtle difference | 细微差别，最高频 |
+| subtle hint | 含蓄的暗示 |
+| subtle change | 不明显的变化 |
+
+4. **用法提示**：只作形容词；注意 **b 不发音**，读 /ˈsʌt.əl/，副词是 subtly。
+
+5. **核心记忆逻辑**：形容"存在但要留意才能发现"的东西。想强调"小"用 small，
+想强调"不容易被发现"才用 subtle。
+
+6. **词汇拓展**：slight 只说程度小；subtle 强调难以察觉。
+delicate 偏"精致易碎"，不能互换。""",
 }
+
+MOCK_WORD_MD_FALLBACK = """1. **单词**：{word}
+
+（这是占位内容。接真实模型后，这里会是 `review.WORD_PARSE_SYSTEM_PROMPT`
+输出的六段式解析：音标词性、释义例句、常见搭配、用法提示、记忆逻辑、词汇拓展。）
+
+2. **释义**：待解析
+3. **常见搭配**：待解析
+4. **用法提示**：待解析"""
 
 MOCK_LOOKUP = {
     'subtle': {'word': 'subtle', 'ipa': '/ˈsʌtl/', 'def': '不易察觉的、微妙的。b 不发音。'},

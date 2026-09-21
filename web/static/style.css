@@ -138,6 +138,20 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 .md-h { color: var(--text); font-size: 14px; margin: 12px 0 7px; }
 .md-h:first-child { margin-top: 0; }
 
+/* 小节标题：带编号的小圆点 + 稍亮的标题，让长解析有节奏 */
+.md-sec {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--text); font-size: 13px; letter-spacing: 0.02em;
+  margin: 18px 0 8px; padding-top: 12px;
+  border-top: 0.5px solid var(--border);
+}
+.md-sec:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+.md-num {
+  flex: none; width: 17px; height: 17px; border-radius: 50%;
+  background: var(--accent-bg); color: var(--accent-text);
+  font-size: 10px; font-style: normal; line-height: 17px; text-align: center;
+}
+
 /* ============ 练习：递进式阶段 ============
    核心机制：容器上一个 data-stage，靠属性选择器控制各段的显隐和尺寸。
    句子区进入解析阶段后是「缩小退场」而不是消失 —— 用户随时能抬眼看原句，
@@ -312,7 +326,32 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 .round.open .round-body { display: block; animation: slideup 0.4s var(--ease) both; }
 .round-body .bookmark { position: absolute; top: -34px; right: 24px; }
 
-/* ============ 单词页 ============ */
+/* ============ 单词页 ============
+   主次：查词框 + 单词卡是主角，生词本是收起的抽屉。
+   进来不自动选词 —— 次要内容不该抢主位。 */
+.stage[data-stage="1"] .st2up { display: none; }
+.stage[data-stage="2"] .st1 { display: none; }
+
+.empty-hint { padding: 26px 0 10px; }
+
+.wcard { margin-top: 22px; animation: slideup 0.45s var(--ease) both; }
+.wcard-head {
+  display: flex; align-items: baseline; gap: 10px;
+  flex-wrap: wrap; margin-bottom: 14px;
+}
+.wcard-word { font-size: 30px; color: var(--text); line-height: 1.2; }
+.wcard-badge { font-size: 12px; color: var(--text-4); }
+.wcard-head .pill { align-self: center; }
+.wcard-head .pill.ghost { margin-left: auto; }
+
+/* 追问和保存等解析流完才出现，跟练习页一个逻辑 */
+.w-ready { display: none; }
+.wcard.ready .w-ready { display: block; animation: slideup 0.45s var(--ease) both; }
+
+.wbook { margin-top: 30px; padding-top: 6px; border-top: 0.5px solid var(--border); }
+#w-count { color: var(--text-5); }
+
+
 .two-col { display: grid; grid-template-columns: 158px minmax(0, 1fr); gap: 22px; }
 .wlist button {
   width: 100%; display: flex; justify-content: space-between; align-items: center;

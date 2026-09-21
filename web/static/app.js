@@ -98,7 +98,15 @@ function mdToHtml(src) {
 
     const h = line.match(/^#{1,4}\s+(.*)$/);
     const q = line.match(/^&gt;\s*(.*)$/);           // esc() 已经把 > 转成了 &gt;
+    // 模型爱用「1. **小节名**：正文」或整行加粗当小节标题
+    // （WORD_PARSE_SYSTEM_PROMPT 和纠错分析都是这个格式），单独排版才不糊成一团
+    const numSec = line.match(/^(\d+)[.、]\s*\*\*(.+?)\*\*[:：]?\s*(.*)$/);
+    const boldSec = line.match(/^\*\*(.+?)\*\*[:：]?$/);
     if (h) html += `<div class="md-h">${inline(h[1])}</div>`;
+    else if (numSec) {
+      html += `<div class="md-sec"><i class="md-num">${numSec[1]}</i>${inline(numSec[2])}</div>`;
+      if (numSec[3]) html += `<p>${inline(numSec[3])}</p>`;
+    } else if (boldSec) html += `<div class="md-sec">${inline(boldSec[1])}</div>`;
     else if (q) html += `<blockquote>${inline(q[1])}</blockquote>`;
     else html += `<p>${inline(line)}</p>`;
   }
@@ -202,7 +210,7 @@ $$('.nav button').forEach((b) => {
     $('#v-' + b.dataset.view).classList.add('on');
     closePop();
     if (b.dataset.view === 'archive') loadArchive('all');
-    if (b.dataset.view === 'word') loadWords();
+    if (b.dataset.view === 'word') refreshWordCount();   // 只更新计数，不自动打开某个词
   });
 });
 
@@ -302,8 +310,8 @@ $('#p-save').addEventListener('click', async (e) => {
 /* ========== 解析线索：每轮一条，旧的折叠成一行 ==========
    之前是一张卡片被反复清空重写，追问会把上一轮的分析擦掉。
    现在每轮独立成 .round，点标题头展开/收起，随时能翻回去看。 */
-function addRound(title) {
-  const thread = $('#p-thread');
+function addRound(title, threadSel = '#p-thread') {
+  const thread = $(threadSel);
   $$('.round', thread).forEach((r) => r.classList.remove('open'));   // 新的一轮进来，旧的收起
 
   const el = document.createElement('div');
@@ -476,55 +484,144 @@ function setupMic(btn) {
 
 $$('.mic-btn').forEach(setupMic);
 
-/* ==================== 单词 ==================== */
-// 实心用强调色、空心用暗色，不然两个字形在小字号下几乎分不出来
-const dots = (n) =>
-  `<span style="color:var(--accent)">${'●'.repeat(n)}</span>` +
-  `<span style="color:var(--text-5)">${'○'.repeat(4 - n)}</span>`;
+/* ==================== 单词 ====================
+   主次：查词是主角，生词本是收起的抽屉，进来不自动选词。 */
 
-async function loadWords() {
+// 熟练度：没做过测验的词是 null，要显示"未测过"而不是 0 分
+const dots = (n) => n === null || n === undefined
+  ? '<span style="color:var(--text-5);font-size:11px">未测</span>'
+  : `<span style="color:var(--accent)">${'●'.repeat(Math.round(n))}</span>` +
+    `<span style="color:var(--text-5)">${'○'.repeat(Math.max(0, 5 - Math.round(n)))}</span>`;
+
+let wordState = { word: '', body: '' };
+
+function wordSetStage(n) {
+  $('#w-stage').dataset.stage = String(n);
+}
+
+async function analyzeWord(word) {
+  wordState = { word, body: '' };
+  wordSetStage(2);
+  $('#w-word').textContent = word;
+  $('#w-badge').textContent = '';
+  $('#w-thread').innerHTML = '';
+  $('#w-saved').innerHTML = '';
+  $('.wcard').classList.remove('ready');
+  $('#w-save').textContent = '存进生词本';
+  $('#w-save').disabled = false;
+  $('#w-save-note').textContent = '总结这个词，存进生词本';
+  $('#w-save-note').disabled = false;
+  wordMsg('');
+
+  const body = $('#w-body');
+  body.textContent = '';
+  body.classList.add('caret');
+  let raw = '';
+  await stream('/api/word/analyze', { word }, (m) => {
+    if (m.delta) { raw += m.delta; body.textContent = raw; }
+    if (m.warn || m.error) wordMsg(m.warn || m.error);
+  });
+  body.classList.remove('caret');
+  wordState.body = raw;
+  if (raw.trim()) body.innerHTML = mdToHtml(raw);
+  $('.wcard').classList.add('ready');      // 读完了，追问和保存才出现
+}
+
+function wordMsg(text) {
+  const box = $('#w-msg');
+  box.textContent = text;
+  if (text) setTimeout(() => { if (box.textContent === text) box.textContent = ''; }, 4000);
+}
+
+/* 点生词本里的词：显示**已经存下来的笔记**，不是重新查 ——
+   重新查要花额度，而且会覆盖掉当时讨论出来的结论。想重查有单独的按钮。 */
+async function showSavedWord(word) {
+  const d = await (await fetch('/api/words/' + encodeURIComponent(word))).json();
+  if (!d.ok) { wordMsg(d.msg || '读取失败'); return; }
+  wordState = { word: d.word, body: d.usage || '' };
+  wordSetStage(2);
+  $('#w-word').textContent = d.word;
+  $('#w-badge').textContent =
+    `存于 ${d.time || '未知时间'}${d.proficiency != null ? ` · 熟练度 ${d.proficiency}/5` : ''}`;
+  $('#w-body').innerHTML = mdToHtml(d.usage || '');
+  $('#w-thread').innerHTML = '';
+  $('#w-saved').innerHTML = '';
+  $('.wcard').classList.add('ready');
+  $('#w-save').textContent = '重新解析';
+  $('#w-save').disabled = false;
+  wordMsg('这是你之前存下的笔记');
+}
+
+bindSend('#w-add', '#w-go', analyzeWord);
+
+$('#w-play').addEventListener('click', (e) =>
+  speak($('#w-word'), wordState.word, e.target));
+
+$('#w-cam').addEventListener('click', () => window.open(
+  'https://dictionary.cambridge.org/dictionary/english-chinese-simplified/' +
+  encodeURIComponent(wordState.word), '_blank'));
+
+$('#w-save').addEventListener('click', (e) => {
+  if (e.target.textContent === '重新解析') { analyzeWord(wordState.word); return; }
+  wordMsg('存进生词本 —— 接真实后端后生效（现在是 MOCK）');
+});
+
+$('#w-clear').addEventListener('click', () => {
+  wordSetStage(1);
+  $('#w-add').value = '';
+  $('#w-add').focus();
+});
+
+/* 追问：复用练习页的折叠 round */
+async function askWord(question) {
+  const round = addRound(question, '#w-thread');
+  const md = $('.md', round);
+  let raw = '';
+  md.classList.add('caret');
+  await stream('/api/word/followup', { question, word: wordState.word }, (m) => {
+    if (m.delta) { raw += m.delta; md.textContent = raw; }
+    if (m.warn || m.error) wordMsg(m.warn || m.error);
+  });
+  md.classList.remove('caret');
+  if (raw.trim()) md.innerHTML = mdToHtml(raw);
+}
+bindSend('#w-more', '#w-more-send', askWord);
+
+$('#w-save-note').addEventListener('click', () => {
+  wordMsg('总结存进生词本 —— 接真实后端后生效（现在是 MOCK）');
+});
+
+/* 生词本：默认收起的抽屉 */
+$('#w-book').addEventListener('click', async (e) => {
+  const box = $('#w-list');
+  if (box.innerHTML) {
+    box.innerHTML = '';
+    e.currentTarget.classList.remove('open');
+    return;
+  }
+  e.currentTarget.classList.add('open');
+  box.innerHTML = '<div class="hint">读取中…</div>';
   const list = await (await fetch('/api/words')).json();
-  $('#w-list').innerHTML = list.map((w, i) => `
-    <button data-word="${w.word}" class="${i === 0 ? 'on' : ''}">
-      <span>${w.word}</span>
+  if (!list.length) {
+    box.innerHTML = '<div class="hint">生词本还是空的，查个词存进来吧</div>';
+    return;
+  }
+  box.innerHTML = `<div class="wlist">${list.map((w) => `
+    <button data-word="${esc(w.word)}">
+      <span>${esc(w.word)}</span>
       <span class="prof">${dots(w.proficiency)}</span>
-    </button>`).join('');
+    </button>`).join('')}</div>`;
   $$('#w-list button').forEach((b) => b.addEventListener('click', () => {
     $$('#w-list button').forEach((x) => x.classList.remove('on'));
     b.classList.add('on');
-    showWord(b.dataset.word);
+    showSavedWord(b.dataset.word);
   }));
-  if (list.length) showWord(list[0].word);
-}
-
-async function showWord(word) {
-  $('#w-detail').innerHTML = '<div class="hint">查询中…</div>';
-  const d = await (await fetch('/api/words/' + encodeURIComponent(word))).json();
-  $('#w-detail').innerHTML = `
-    <div class="row" style="align-items:baseline;gap:12px;margin-bottom:14px">
-      <span style="font-size:27px">${esc(d.word)}</span>
-      <span class="ipa" style="font-family:var(--font-mono);font-size:13px;color:var(--text-4)">${esc(d.ipa)}</span>
-      <button class="pill ghost" style="margin-left:auto" data-cam="${esc(d.word)}">剑桥词典 ↗</button>
-    </div>
-    <div class="card" style="font-size:14px;line-height:1.7;color:var(--text-2)">${esc(d.usage)}</div>
-    <div class="card">
-      <div class="label acc">例句</div>
-      ${d.examples.map((e) => `<div class="en" style="font-size:14px;line-height:1.7;color:var(--text-2)">${esc(e)}</div>`).join('')}
-    </div>
-    <div class="row" style="margin-top:14px">
-      <button class="pill acc">出题练一练</button>
-      <button class="pill">复习这个词</button>
-    </div>`;
-  const cam = $('[data-cam]', $('#w-detail'));
-  cam.addEventListener('click', () => window.open(
-    'https://dictionary.cambridge.org/dictionary/english-chinese-simplified/' +
-    encodeURIComponent(d.word), '_blank'));
-}
-
-bindSend('#w-add', '#w-go', (word) => {
-  $$('#w-list button').forEach((x) => x.classList.remove('on'));
-  showWord(word);
 });
+
+async function refreshWordCount() {
+  const list = await (await fetch('/api/words')).json();
+  $('#w-count').textContent = list.length ? ` (${list.length})` : '（空）';
+}
 
 /* ==================== 长难句 ==================== */
 async function analyzeSentence(sentence) {
