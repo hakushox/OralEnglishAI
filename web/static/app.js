@@ -923,6 +923,115 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') { e.preventDefault(); activeDeck.go(activeDeck.index + 1); }
 });
 
+/* ========== 出题测一测 ==========
+   状态（第几题、错几次、完整记录）全在后端，前端只负责显示和提交。
+   答案要点后端不发过来 —— 发了的话在开发者工具里就能看到答案。 */
+
+const QTYPE = { fill_blank: '填空', translation: '中译英' };
+
+function showQuestion(q) {
+  $('#q-pos').textContent = `第 ${q.index} / ${q.total} 题`;
+  $('#q-type').textContent = QTYPE[q.type] || q.type || '';
+  $('#q-explain').textContent = q.explanation || '';
+  $('#q-question').textContent = q.question || '';
+  $('#q-answer').value = '';
+  $('#q-feedback').innerHTML = '';
+  $('#q-tries').textContent = q.tries ? `这题已错 ${q.tries} / ${q.max_tries} 次` : '';
+  $('#q-body').style.display = 'block';
+  $('#q-submit').disabled = false;
+  $('#q-skip').disabled = false;
+  $('#q-answer').focus();
+}
+
+function showFeedback(r) {
+  const label = { correct: '✓ 正确', close: '≈ 接近', wrong: '✗ 不对', skipped: '— 已跳过' }[r.result] || '';
+  $('#q-feedback').innerHTML =
+    `<div class="q-fb ${r.result}"><b>${label}</b><span>${esc(r.feedback || '')}` +
+    (r.answer ? `<span class="ans">参考答案：${esc(r.answer)}</span>` : '') +
+    `</span></div>`;
+}
+
+async function startQuiz(word, btn) {
+  const label = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = '正在出题…'; btn.disabled = true; }
+  const r = await post('/api/word/quiz/start', { word });
+  if (btn) { btn.textContent = label; btn.disabled = false; }
+  if (!r.ok) { toast(r.msg || '出题失败'); return; }
+
+  closeWordBook();
+  $('#q-word').textContent = word;
+  $('#q-result').innerHTML = '';
+  $('#w-stage').dataset.stage = '3';
+  showQuestion(r.q);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function submitAnswer(answer) {
+  $('#q-submit').disabled = true;
+  const r = await post('/api/word/quiz/answer', { answer });
+  if (!r.ok) { toast(r.msg || '提交失败'); $('#q-submit').disabled = false; return; }
+
+  if (r.result === 'retry') {          // 批改抽风，不判死，让用户再提交一次
+    $('#q-tries').textContent = r.feedback;
+    $('#q-submit').disabled = false;
+    return;
+  }
+  showFeedback(r);
+
+  if (r.retry) {                       // 答错但还有机会，留在这题
+    $('#q-tries').textContent = `这题已错 ${r.tries} / ${r.max_tries} 次，再试一次`;
+    $('#q-answer').value = '';
+    $('#q-answer').focus();
+    $('#q-submit').disabled = false;
+    return;
+  }
+  // 过了这题：停一下让用户看清反馈，再进下一题
+  setTimeout(() => (r.done ? finishQuiz() : showQuestion(r.q)), 1600);
+}
+
+bindSend('#q-answer', '#q-submit', submitAnswer);
+
+$('#q-skip').addEventListener('click', async () => {
+  $('#q-skip').disabled = true;
+  const r = await post('/api/word/quiz/skip', {});
+  if (!r.ok) { toast(r.msg || '跳过失败'); return; }
+  showFeedback(r);
+  setTimeout(() => (r.done ? finishQuiz() : showQuestion(r.q)), 1400);
+});
+
+async function finishQuiz() {
+  $('#q-body').style.display = 'none';
+  $('#q-result').innerHTML = '<div class="card md caret">正在评估这次测验…</div>';
+  const r = await post('/api/word/quiz/finish', {});
+  if (!r.ok) {
+    $('#q-result').innerHTML = `<div class="card">${esc(r.msg || '评估失败')}</div>`;
+    return;
+  }
+  $('#q-result').innerHTML = `
+    <div class="q-done">
+      <div class="q-score">
+        <span class="num">${r.proficiency}</span><span class="of">/ 5</span>
+        <span class="prof">${dots(r.proficiency)}</span>
+      </div>
+      <div class="label acc">这次暴露的问题</div>
+      <div class="card md">${mdToHtml(r.issue || '')}</div>
+      <div class="row" style="margin-top:14px">
+        <button class="pill acc" data-q="again">再测一次</button>
+        <button class="pill" data-q="back">回到单词卡</button>
+      </div>
+    </div>`;
+  $('[data-q=again]', $('#q-result')).addEventListener('click', () => startQuiz(r.word, null));
+  $('[data-q=back]', $('#q-result')).addEventListener('click', quitQuiz);
+  refreshWordCount();
+}
+
+function quitQuiz() {
+  $('#w-stage').dataset.stage = wordState.word ? '2' : '1';
+  $('#q-result').innerHTML = '';
+  $('#q-body').style.display = 'block';
+}
+$('#q-quit').addEventListener('click', quitQuiz);
+
 /* ========== 生词本 ========== */
 async function loadWordBook() {
   const list = await (await fetch('/api/words')).json();
@@ -953,13 +1062,7 @@ async function loadWordBook() {
       </div></div>`,
     onAction: async (act, w, slide, btn) => {
       if (act === 'review') return showSavedWord(w.word);
-      if (act === 'test') {
-        const old = btn.textContent;
-        btn.textContent = '出题还没接上';
-        btn.disabled = true;
-        setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 2000);
-        return;
-      }
+      if (act === 'test') return startQuiz(w.word, btn);
       // 删除藏在提拉展开后的动作里 —— 必须先点开看清是哪个词才能删
       const r = await post('/api/archive/delete', { kind: 'word', id: w.id });
       if (!r.ok) { toast(r.msg || '删除失败'); return; }

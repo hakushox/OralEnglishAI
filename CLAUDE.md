@@ -48,12 +48,27 @@
   用户会误当成结果。输入框只放 whisper 的定稿。
 - whisper 失败但实时字幕有内容时，保留字幕结果而不是清空 —— 别让用户白说一遍。
 
-**还是假的（按重要性排）**
+**「出题练一练」已接真**：`QUESTION_GEN` 出题 → `GRADE_ANSWER` 逐题批改
+→ `PRACTICE_CONCLUSION` 打熟练度分并写回生词本。几个要点：
 
-1. **出题练一练** —— 三个 prompt（`QUESTION_GEN` / `GRADE_ANSWER` /
+- **状态全在后端**（第几题、错几次、完整记录），模型只负责出题和判单题 ——
+  跟终端版 `run_practice_session()` 同一个思路，不依赖模型记住上下文。
+- **`answer_hint` 绝不发给前端。** 终端版没这个问题（答案在同一进程里），
+  浏览器版发过去的话，用户在开发者工具就能看到答案。判题必须留在后端。
+- `correct` / `close` 都算过；`wrong` 允许重试，错满 3 次才给答案要点并放行。
+- 批改抽风时返回 `retry` 让用户重答，不判死也不卡住流程。
+- 熟练度写回用 `store.set_proficiency()` 而不是 `save_path.update_word_proficiency`
+  —— 后者按 `word` 精确匹配（大小写敏感），跟别处不分大小写的匹配不一致，
+  大小写不同时会静默写不进去。
+- 判越界要看 `i < len(questions)` 而不是只看 `questions` 非空 ——
+  答完最后一题后 `questions` 还在但 `i` 已越界，直接取会 IndexError 返回空响应。
+
+**还是假的**
+
+1. **选词浮层** —— 三个 prompt（`QUESTION_GEN` / `GRADE_ANSWER` /
    `PRACTICE_CONCLUSION`）和 `save_path.update_word_proficiency` 都现成，没接。
    接上之后生词本卡片上那些「未测」才会变成真实熟练度。
-2. **选词浮层** —— `/api/lookup/{word}` 是占位释义。打算用本地 ollama 快速出一句。
+   `/api/lookup/{word}` 是占位释义。打算用本地 ollama 快速出一句。
 
 **不在功能清单里但必须做的：打包（建议下一步就做）。**
 

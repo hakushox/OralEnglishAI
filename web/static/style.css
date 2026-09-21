@@ -481,6 +481,43 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 #w-save-note { display: none; }
 .wcard.savable #w-save-note { display: inline-flex; animation: slideup 0.4s var(--ease) both; }
 
+/* ============ 出题测一测 ============
+   测验时整屏只做一件事：单词卡整块让位（.st3 和 .st2up 互斥）。 */
+.stage[data-stage="3"] .st2up { display: none; }
+.stage[data-stage="3"] .st1 { display: none; }
+.quiz { display: none; }
+.stage[data-stage="3"] .quiz { display: block; animation: slideup 0.45s var(--ease) both; }
+
+.quiz-head {
+  display: flex; align-items: baseline; gap: 12px;
+  margin: 20px 0 18px; padding-bottom: 14px;
+  border-bottom: 0.5px solid var(--border);
+}
+.quiz-word { font-size: 24px; color: var(--text); }
+.quiz-pos { font-size: 12px; color: var(--text-4); }
+
+.q-fb {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-top: 14px; padding: 12px 14px; border-radius: var(--radius);
+  font-size: 13px; line-height: 1.6;
+  animation: slideup 0.35s var(--ease) both;
+}
+.q-fb.correct { background: var(--accent-bg); color: var(--accent-text); }
+.q-fb.close { background: #3a3320; color: #e8d59a; }
+.q-fb.wrong { background: #3a2422; color: #f0c9c6; }
+.q-fb.skipped { background: var(--surface-2); color: var(--text-3); }
+.q-fb b { flex: none; font-weight: 400; }
+.q-fb .ans { display: block; margin-top: 6px; color: var(--text-2); font-size: 12px; }
+
+/* 结果面板：熟练度分数 + 这次暴露的问题 */
+.q-done { margin-top: 20px; animation: slideup 0.5s var(--ease) both; }
+.q-score {
+  display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px;
+}
+.q-score .num { font-size: 40px; color: var(--accent); line-height: 1; }
+.q-score .of { font-size: 14px; color: var(--text-4); }
+.q-score .prof { font-size: 16px; letter-spacing: 2px; }
+
 .wbook { margin-top: 30px; padding-top: 6px; border-top: 0.5px solid var(--border); }
 #w-count { color: var(--text-5); }
 

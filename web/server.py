@@ -364,6 +364,154 @@ async def word_open(payload: dict = Body(...)):
     return {'ok': False, 'msg': '生词本里没有这个词'}
 
 
+# ==================== 单词：出题练一练 ====================
+#
+# 状态全部由**代码**维护（第几题、错了几次、完整记录），不依赖模型记住上下文 ——
+# 终端版 run_practice_session() 就是这个思路，模型只负责出题和判单题。
+#
+# 关键的安全点：answer_hint（答案要点）**绝不发给前端**。
+# 终端版不存在这问题（答案在同一个进程里），浏览器版如果发过去，
+# 用户在开发者工具里就能直接看到答案，测验就没意义了。判题必须留在后端。
+_quiz = {'word': '', 'usage': '', 'questions': [], 'i': 0, 'wrong': 0, 'transcript': []}
+
+MAX_WRONG = 3        # 同一题错满 3 次就给答案要点、进下一题（跟终端版一致）
+
+
+def _quiz_active():
+    """这轮还有没有在等作答的题。
+
+    不能只判断 questions 非空 —— 答完最后一题后 i 已越界而 questions 还在，
+    直接取 questions[i] 会 IndexError，接口返回空响应。
+    """
+    return bool(_quiz['questions']) and _quiz['i'] < len(_quiz['questions'])
+
+
+def _quiz_view():
+    """当前题目对外的样子 —— 只给题面，不给答案"""
+    q = _quiz['questions'][_quiz['i']]
+    return {
+        'index': _quiz['i'] + 1,
+        'total': len(_quiz['questions']),
+        'type': q.get('type', ''),
+        'explanation': q.get('explanation', ''),
+        'question': q.get('question', ''),
+        'tries': _quiz['wrong'],
+        'max_tries': MAX_WRONG,
+    }
+
+
+@app.post('/api/word/quiz/start')
+def quiz_start(payload: dict = Body(...)):
+    word = (payload.get('word') or '').strip()
+    entry = next((w for w in store.load_words()
+                  if w.get('word', '').lower() == word.lower()), None)
+    if entry is None:
+        return {'ok': False, 'msg': '生词本里没有这个词，先存进来再测'}
+
+    data = engine.collect_json(engine.stream_answer([
+        {'role': 'system', 'content': review.QUESTION_GEN_SYSTEM_PROMPT},
+        {'role': 'user', 'content': f"单词：{entry['word']}\n用法：{entry.get('usage', '')}"},
+    ], temperature=0.6))
+    questions = (data or {}).get('questions') or []
+    if not questions:
+        return {'ok': False, 'msg': '出题失败了，再试一次'}
+
+    _quiz.update(word=entry['word'], usage=entry.get('usage', ''),
+                 questions=questions, i=0, wrong=0, transcript=[])
+    return {'ok': True, 'q': _quiz_view()}
+
+
+@app.post('/api/word/quiz/answer')
+def quiz_answer(payload: dict = Body(...)):
+    if not _quiz_active():
+        return {'ok': False, 'msg': '这轮测验已经答完了，点「完成」看评估'}
+    answer = (payload.get('answer') or '').strip()
+    if not answer:
+        return {'ok': False, 'msg': '先写点什么再提交'}
+
+    q = _quiz['questions'][_quiz['i']]
+    data = engine.collect_json(engine.stream_answer([
+        {'role': 'system', 'content': review.GRADE_ANSWER_SYSTEM_PROMPT},
+        {'role': 'user', 'content': f"题目：{q.get('question')}\n"
+                                    f"参考答案要点：{q.get('answer_hint')}\n"
+                                    f"用户回答：{answer}"},
+    ], temperature=0.1))
+    # 批改抽风时不判死 —— 让用户重答，而不是卡住整个流程（跟终端版一致）
+    grade = data if data and 'result' in data else {
+        'result': 'retry', 'feedback': '批改暂时失败，再提交一次'}
+
+    result = grade.get('result')
+    if result == 'retry':
+        return {'ok': True, 'result': 'retry', 'feedback': grade.get('feedback', '')}
+
+    _quiz['transcript'].append({
+        'question': q.get('question'), 'user_answer': answer,
+        'result': result, 'feedback': grade.get('feedback'),
+    })
+
+    # correct / close 都算过；wrong 允许重试，错满 MAX_WRONG 次才放行
+    if result == 'wrong':
+        _quiz['wrong'] += 1
+        if _quiz['wrong'] < MAX_WRONG:
+            return {'ok': True, 'result': 'wrong', 'feedback': grade.get('feedback', ''),
+                    'retry': True, 'tries': _quiz['wrong'], 'max_tries': MAX_WRONG}
+        # 错满了，把答案要点给出来（这时候才给，不提前泄露）
+        return _quiz_advance({'result': 'wrong', 'feedback': grade.get('feedback', ''),
+                              'answer': q.get('answer_hint', '')})
+
+    return _quiz_advance({'result': result, 'feedback': grade.get('feedback', ''),
+                          'answer': grade.get('correct_answer', '')})
+
+
+def _quiz_advance(extra):
+    _quiz['wrong'] = 0
+    _quiz['i'] += 1
+    out = {'ok': True, **extra}
+    if _quiz['i'] >= len(_quiz['questions']):
+        out['done'] = True
+    else:
+        out['q'] = _quiz_view()
+    return out
+
+
+@app.post('/api/word/quiz/skip')
+async def quiz_skip():
+    if not _quiz_active():
+        return {'ok': False, 'msg': '这轮测验已经答完了，点「完成」看评估'}
+    q = _quiz['questions'][_quiz['i']]
+    _quiz['transcript'].append({
+        'question': q.get('question'), 'user_answer': None,
+        'result': 'skipped', 'feedback': None,
+    })
+    return _quiz_advance({'result': 'skipped', 'feedback': '已跳过',
+                          'answer': q.get('answer_hint', '')})
+
+
+@app.post('/api/word/quiz/finish')
+def quiz_finish():
+    """诊断这轮测验、打熟练度分并写回生词本"""
+    if not _quiz['transcript']:
+        return {'ok': False, 'msg': '这轮没有作答记录，不打分'}
+    joined = '\n'.join(
+        f"题目：{t['question']} | 用户回答：{t['user_answer']} | "
+        f"判定：{t['result']} | 反馈：{t['feedback']}"
+        for t in _quiz['transcript'])
+    data = engine.collect_json(engine.stream_answer([
+        {'role': 'system', 'content': review.PRACTICE_CONCLUSION_SYSTEM_PROMPT},
+        {'role': 'user', 'content': f"以下是用户练习单词\"{_quiz['word']}\"的完整测验记录：\n\n{joined}"},
+    ], temperature=0.2))
+    try:
+        prof = round(float(data['proficiency']), 1)
+        issue = str(data['issue'])
+    except (TypeError, KeyError, ValueError):
+        return {'ok': False, 'msg': '评估生成失败，这次不记熟练度'}
+
+    saved = store.set_proficiency(_quiz['word'], prof, issue)
+    word = _quiz['word']
+    _quiz.update(questions=[], i=0, wrong=0, transcript=[])
+    return {'ok': True, 'word': word, 'proficiency': prof, 'issue': issue, 'saved': saved}
+
+
 @app.post('/api/word/save')
 async def word_save(payload: dict = Body(...)):
     """把当前解析原样存进生词本（没追问过时用这个）"""

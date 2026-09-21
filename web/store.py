@@ -114,6 +114,23 @@ def save_word(word, usage, stars=''):
     return 'created'
 
 
+def set_proficiency(word, proficiency, issue):
+    """测验结束后把熟练度和问题点写回生词本。
+
+    不直接用 save_path.update_word_proficiency —— 它按 `item['word'] == word`
+    精确匹配（大小写敏感），而这里别处都是不分大小写匹配的，
+    大小写不一致时会静默写不进去。
+    """
+    words = load_words()
+    for item in words:
+        if item.get('word', '').lower() == (word or '').lower():
+            item['proficiency'] = proficiency
+            item['issue'] = issue
+            _write_words(words)
+            return True
+    return False
+
+
 # ---------- markdown 日志 ----------
 
 def _load_md_entries(path):

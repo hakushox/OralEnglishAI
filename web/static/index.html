@@ -163,6 +163,38 @@
         <div class="row" style="margin-top:8px"><span class="hint" id="w-msg"></span></div>
       </div>
 
+      <!-- ③ 出题测一测。跟单词卡是互斥的：测验时整屏只做一件事 -->
+      <div class="st3 quiz">
+        <div class="quiz-head">
+          <span class="quiz-word en" id="q-word"></span>
+          <span class="quiz-pos" id="q-pos"></span>
+          <button class="invite subtle restart" id="q-quit" style="margin-left:auto"
+                  data-tip="退出测验，回到单词卡">退出测验<span class="chev">↻</span></button>
+        </div>
+
+        <div id="q-body">
+          <div class="label" id="q-type"></div>
+          <div class="card" id="q-explain" style="font-size:13px;color:var(--text-3)"></div>
+          <div class="en" id="q-question" style="font-size:18px;line-height:1.7;margin:14px 0"></div>
+          <div class="inrow">
+            <div class="field single">
+              <input type="text" id="q-answer" placeholder="写下你的答案，回车提交">
+              <button class="mic-btn" data-mic="#q-answer" data-lang="en"
+                      aria-label="语音输入（说英文）" title="语音输入（说英文）">🎙</button>
+              <div class="wave" data-wave></div>
+            </div>
+            <button class="pill acc" id="q-submit" data-tip="提交这一题的答案">提交</button>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <button class="pill ghost" id="q-skip" data-tip="跳过这题，记为未作答">跳过这题</button>
+            <span class="hint" id="q-tries" style="margin-left:auto"></span>
+          </div>
+          <div id="q-feedback"></div>
+        </div>
+
+        <div id="q-result"></div>
+      </div>
+
       <!-- 次级板块：生词本 -->
       <div class="section" id="w-section">
         <button class="section-head" id="w-book" data-tip="你存过的词，可以翻看、追问、删除">

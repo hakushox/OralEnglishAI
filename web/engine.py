@@ -195,6 +195,33 @@ def collect(events):
     return ''.join(parts) if parts else None
 
 
+def collect_json(events):
+    """抽干事件流并解析成 JSON。
+
+    模型经常把 JSON 包在 ```json 围栏里，或者前后带一句废话，
+    所以先剥围栏、再退一步找最外层的花括号。
+    解析不出来返回 None，由调用方兜底 —— 不要让整个流程卡死在一次格式抽风上。
+    """
+    import json
+    import re
+    raw = collect(events)
+    if not raw:
+        return None
+    cleaned = re.sub(r'```(?:json)?', '', raw).strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+    m = re.search(r'\{[\s\S]*\}', cleaned)      # 前后夹了废话时，抠出最外层大括号
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except json.JSONDecodeError:
+            pass
+    print(f'[engine] JSON 解析失败，原始内容前 200 字：{cleaned[:200]}')
+    return None
+
+
 def build_why_messages(draft, revised):
     """开一条「为什么这么改」的独立对话线索，对应终端版的 ask_why_fixed_thread()"""
     import json
