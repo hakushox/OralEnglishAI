@@ -523,6 +523,13 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 .prof { font-size: 11px; letter-spacing: 1px; color: var(--text-5); }
 .prof.hi { color: var(--accent); }
 
+/* 长难句 / 随便问：追问和保存等第一轮流完才出现，跟练习页同一套 */
+.s-ready, .c-ready { display: none; }
+.stage[data-stage="2"] .s-ready,
+.stage[data-stage="2"] .c-ready { display: block; animation: slideup 0.45s var(--ease) both; }
+.stage[data-stage="1"] .st2up { display: none; }
+.stage[data-stage="2"] .st1 { display: none; }
+
 /* ============ 对话 ============ */
 .bubbles { min-height: 60px; margin-bottom: 16px; }
 .b-user {

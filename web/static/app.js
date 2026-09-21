@@ -211,6 +211,8 @@ $$('.nav button').forEach((b) => {
     closePop();
     if (b.dataset.view === 'archive') loadArchive('all');
     if (b.dataset.view === 'word') refreshWordCount();   // 只更新计数，不自动打开某个词
+    if (b.dataset.view === 'parse') refreshParseCount();
+    if (b.dataset.view === 'chat') refreshChatCount();
   });
 });
 
@@ -858,50 +860,116 @@ async function refreshWordCount() {
 }
 
 /* ==================== 长难句 ==================== */
+let parseState = { sentence: '' };
+
+function parseMsg(t) {
+  const b = $('#s-msg');
+  b.textContent = t;
+  if (t) setTimeout(() => { if (b.textContent === t) b.textContent = ''; }, 4000);
+}
+
 async function analyzeSentence(sentence) {
-  $('#s-result').style.display = 'block';
-  $('#s-thread').innerHTML = '';        // 换新句子时清掉上一轮的追问
+  parseState.sentence = sentence;
+  $('#s-stage').dataset.stage = '2';
   $('#s-sentence').textContent = sentence;
-  $('#s-tags').textContent = '分析中…';
-  const a = $('#s-analysis');
-  a.textContent = '';
-  a.classList.add('caret');
-  await stream('/api/parse', { sentence }, (m) => {
-    if (m.tags) $('#s-tags').textContent = m.tags;
-    if (m.delta) a.textContent += m.delta;
+  $('#s-thread').innerHTML = '';
+  $('#s-saved').innerHTML = '';
+  $('#s-save').textContent = '总结成复习笔记';
+  $('#s-save').disabled = false;
+  $('#s-next').classList.remove('pulse');
+  parseMsg('');
+
+  const round = addRound('结构解析', '#s-thread');
+  const md = $('.md', round);
+  let raw = '';
+  md.classList.add('caret');
+  await stream('/api/parse/analyze', { sentence }, (m) => {
+    if (m.delta) { raw += m.delta; md.textContent = raw; }
+    if (m.warn || m.error) parseMsg(m.warn || m.error);
   });
-  a.classList.remove('caret');
+  md.classList.remove('caret');
+  if (raw.trim()) md.innerHTML = mdToHtml(raw);
 }
 
 bindSend('#s-input', '#s-go', analyzeSentence);
 
-// 追问不能复用 analyzeSentence —— 那个会把标题栏的句子换成问题本身。
-// 追问是在原分析下面接着聊，原句必须留在上面。
-bindSend('#s-more', '#s-more-send', async (question) => {
-  const box = $('#s-thread');
-  box.insertAdjacentHTML('beforeend',
-    `<div class="card"><div class="label">${esc(question)}</div><div class="md caret"></div></div>`);
-  const body = box.lastElementChild.querySelector('.md');
-  let raw = '';
-  await stream('/api/parse', { sentence: question, followup: true }, (m) => {
-    if (m.delta) { raw += m.delta; body.textContent = raw; }
-    if (m.warn || m.error) msg(m.warn || m.error);
-  });
-  body.classList.remove('caret');
-  if (raw.trim()) body.innerHTML = mdToHtml(raw);
-});
-$('#s-save').addEventListener('click', (e) => { e.target.textContent = '已存为笔记'; e.target.disabled = true; });
+$('#s-play').addEventListener('click', (e) =>
+  speak($('#s-sentence'), parseState.sentence, e.target));
 
-/* 这两个依赖的模块还是 MOCK，先给一句明确说明 ——
-   点了毫无反应是最糟的，用户分不清是坏了还是没做。 */
-const notReady = (sel, what) => $(sel).addEventListener('click', (e) => {
-  const old = e.target.textContent;
-  e.target.textContent = `${what}还没接真实逻辑`;
-  e.target.disabled = true;
-  setTimeout(() => { e.target.textContent = old; e.target.disabled = false; }, 2200);
+// 追问不能复用 analyzeSentence —— 那会把标题栏的原句换成问题本身
+bindSend('#s-more', '#s-more-send', async (question) => {
+  const round = addRound(question, '#s-thread');
+  const md = $('.md', round);
+  let raw = '';
+  md.classList.add('caret');
+  await stream('/api/parse/followup', { question }, (m) => {
+    if (m.delta) { raw += m.delta; md.textContent = raw; }
+    if (m.warn || m.error) parseMsg(m.warn || m.error);
+  });
+  md.classList.remove('caret');
+  if (raw.trim()) md.innerHTML = mdToHtml(raw);
 });
-notReady('#s-review', '长难句笔记复习');
-notReady('#c-save', '对话总结存档');
+
+$('#s-save').addEventListener('click', async (e) => {
+  const btn = e.target, label = btn.textContent;
+  btn.textContent = '正在总结…';
+  btn.disabled = true;
+  const r = await post('/api/parse/save', {});
+  if (!r.ok) { btn.textContent = label; btn.disabled = false; parseMsg(r.msg || '保存失败'); return; }
+  btn.textContent = '✓ 已存成笔记';
+  $$('#s-thread .round').forEach((x) => x.classList.remove('open'));   // 过程收起，留总结
+  $('#s-saved').innerHTML =
+    `<div class="card slide-up" style="margin-top:12px">
+       <div class="label acc">存下的复习笔记</div><div class="md"></div>
+     </div>`;
+  $('#s-saved .md').innerHTML = mdToHtml(r.note || '');
+  $('#s-next').classList.add('pulse');
+  refreshParseCount();
+  $('#s-list').innerHTML = '';
+  $('#s-section').classList.remove('open');
+});
+
+$('#s-next').addEventListener('click', () => {
+  $('#s-stage').dataset.stage = '1';
+  $('#s-next').classList.remove('pulse');
+  $('#s-input').value = '';
+  $('#s-input').focus();
+});
+
+$('#s-review').addEventListener('click', async (e) => {
+  const btn = e.target;
+  btn.disabled = true;
+  $('#s-report').innerHTML = '<div class="card md caret"></div>';
+  const md = $('#s-report .md');
+  let raw = '';
+  await stream('/api/parse/review', {}, (m) => {
+    if (m.delta) { raw += m.delta; md.textContent = raw; }
+    if (m.error) md.textContent = m.error;
+  });
+  md.classList.remove('caret');
+  if (raw.trim()) md.innerHTML = mdToHtml(raw);
+  btn.disabled = false;
+});
+
+$('#s-book').addEventListener('click', async (e) => {
+  e.currentTarget.blur();
+  const sec = $('#s-section');
+  if (sec.classList.contains('open')) {
+    sec.classList.remove('open');
+    $('#s-list').innerHTML = '';
+    return;
+  }
+  sec.classList.add('open');
+  $('#s-list').innerHTML = '<div class="hint">读取中…</div>';
+  const items = await (await fetch('/api/archive?filter=parse')).json();
+  if (!items.length) { $('#s-list').innerHTML = '<div class="hint">还没有笔记</div>'; return; }
+  renderCards(items, $('#s-list'), () => $('#s-book').click());
+});
+
+async function refreshParseCount() {
+  const items = await (await fetch('/api/archive?filter=parse')).json();
+  $('#s-count').textContent = items.length ? `${items.length} 条` : '还是空的';
+}
 
 /* ==================== 随便问 ==================== */
 let chatMode = 'local';
@@ -911,18 +979,76 @@ $$('#c-mode button').forEach((b) => b.addEventListener('click', () => {
   chatMode = b.dataset.mode;
 }));
 
+function chatMsg(t) {
+  const b = $('#c-msg');
+  b.textContent = t;
+  if (t) setTimeout(() => { if (b.textContent === t) b.textContent = ''; }, 4000);
+}
+
 bindSend('#c-input', '#c-send', async (msg) => {
+  $('#c-stage').dataset.stage = '2';
   const box = $('#c-bubbles');
   box.insertAdjacentHTML('beforeend', `<div class="b-user"><span>${esc(msg)}</span></div>`);
   const deep = chatMode === 'deep';
   box.insertAdjacentHTML('beforeend',
     `<div class="b-ai ${deep ? 'deep' : ''}"><span class="tag">${deep ? '深度' : '本地'}</span><span class="body caret"></span></div>`);
   const body = box.lastElementChild.querySelector('.body');
-  await stream('/api/chat', { message: msg, mode: chatMode },
-    (m) => { if (m.delta) body.textContent += m.delta; });
+  let raw = '';
+  await stream('/api/chat/send', { message: msg, mode: chatMode }, (m) => {
+    if (m.delta) { raw += m.delta; body.textContent = raw; }
+    if (m.warn || m.error) chatMsg(m.warn || m.error);
+  });
   body.classList.remove('caret');
-  box.scrollIntoView({ block: 'end', behavior: 'smooth' });
+  if (raw.trim()) body.innerHTML = mdToHtml(raw);   // 深度模式常带表格和列表
+  $('#c-save').textContent = '总结这次对话，存进档案';
+  $('#c-save').disabled = false;
+  body.scrollIntoView({ block: 'end', behavior: 'smooth' });
 });
+
+$('#c-save').addEventListener('click', async (e) => {
+  const btn = e.target, label = btn.textContent;
+  btn.textContent = '正在总结…';
+  btn.disabled = true;
+  const r = await post('/api/chat/save', {});
+  if (!r.ok) { btn.textContent = label; btn.disabled = false; chatMsg(r.msg || '保存失败'); return; }
+  btn.textContent = '✓ 已存进档案';
+  $('#c-saved').innerHTML =
+    `<div class="card slide-up" style="margin-top:12px">
+       <div class="label acc">存进档案的总结</div><div class="md"></div>
+     </div>`;
+  $('#c-saved .md').innerHTML = mdToHtml(r.note || '');
+  refreshChatCount();
+  $('#c-list').innerHTML = '';
+  $('#c-section').classList.remove('open');
+});
+
+$('#c-clear').addEventListener('click', async () => {
+  await post('/api/chat/clear', {});
+  $('#c-bubbles').innerHTML = '';
+  $('#c-saved').innerHTML = '';
+  $('#c-stage').dataset.stage = '1';
+  $('#c-input').focus();
+});
+
+$('#c-book').addEventListener('click', async (e) => {
+  e.currentTarget.blur();
+  const sec = $('#c-section');
+  if (sec.classList.contains('open')) {
+    sec.classList.remove('open');
+    $('#c-list').innerHTML = '';
+    return;
+  }
+  sec.classList.add('open');
+  $('#c-list').innerHTML = '<div class="hint">读取中…</div>';
+  const items = await (await fetch('/api/archive?filter=chat')).json();
+  if (!items.length) { $('#c-list').innerHTML = '<div class="hint">还没有对话总结</div>'; return; }
+  renderCards(items, $('#c-list'), () => $('#c-book').click());
+});
+
+async function refreshChatCount() {
+  const items = await (await fetch('/api/archive?filter=chat')).json();
+  $('#c-count').textContent = items.length ? `${items.length} 条` : '还是空的';
+}
 
 /* ==================== 档案卡片（练习页和档案页共用） ====================
    正文默认收起两行，够长的卡片整张可点展开。

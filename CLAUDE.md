@@ -57,10 +57,17 @@
   新的一轮进来旧的自动收起；存完把过程全部折叠、只留总结当结论，
   并点亮「下一步」按钮（`.invite.pulse` 的光环动效）；
   查完词会自动朗读一次（点查询本身就是用户手势，不会被浏览器拦自动播放）。
+- **长难句已接真**：`SENTENCE_PARSE_SYSTEM_PROMPT` 分析、追问带 GUARD、
+  `SUMMARY_PARSE` 存成复习笔记（那个 prompt 要求开头一字不改引用原句）、
+  `REVIEW_PARSE_SYSTEM_PROMPT` 跨笔记找共性困难。
+- **随便问已接真**：快速档 = 本地优先 + `CASUAL_CHAT_SYSTEM_PROMPT`（短平快），
+  深度档 = 云端优先 + `DEEP_ASK_SYSTEM_PROMPT`（讲透）；`SUMMARY_PROMPT` 存档
+  （那个 prompt 会先检查 assistant 有没有答错、有错先纠正再总结）。
+  对话只带最近 12 条，长了既拖质量也烧额度。
 - **下一步**：单词的「出题练一练」（`QUESTION_GEN` / `GRADE_ANSWER` /
   `PRACTICE_CONCLUSION` 三个 prompt + `save_path.update_word_proficiency` 回写熟练度，
-  后者是纯读写可以直接 import）。生词本每行的「出题测一测」按钮已就位，等接上。
-  再之后：长难句 / 随便问接真、浏览器录音上传 + faster-whisper 转写。
+  后者是纯读写可以直接 import）。生词本卡片上的「出题测一测」按钮已就位，等接上。
+  再之后：浏览器录音上传 + faster-whisper 转写、选词浮层接真。
 - **已知不足**：`SAVE_NOTE_SUMMARY_PROMPT` 限制 80 字，多话题讨论会丢内容
   （比如语法点 + 词义辨析同时聊，总结可能只留后者）。要改得在 `web/prompts.py`
   里另写一份更长的总结 prompt，`review.py` 那个不能动。

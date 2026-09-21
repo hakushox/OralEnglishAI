@@ -1,8 +1,9 @@
 """
 SpeakNatural 浏览器版后端。
 
-已接真实逻辑：练习主流程、语音合成、档案页（含分析语法习惯 / 删除）、单词模块。
-仍是假数据（标了 MOCK）：长难句、随便问、选词浮层、语音转写、单词的「出题练一练」。
+已接真实逻辑：练习主流程、语音合成、档案页（含分析语法习惯 / 删除）、
+单词模块、长难句、随便问。
+仍是假数据（标了 MOCK）：选词浮层、语音转写、单词的「出题练一练」。
 
 流式接口统一按行返回 JSON（NDJSON），事件类型见 web/engine.py 的说明。
 """
@@ -377,40 +378,137 @@ async def word_save_note(payload: dict = Body(...)):
             'note': note, 'stars': stars}
 
 
-@app.post('/api/parse')
-async def parse(payload: dict = Body(...)):
-    """MOCK：真实版本走 review.analyze_sentence_structure()"""
-    text = (
-        'What matters 是主语从句，整句骨架是 A is not B but C。'
-        '后半句 how well 省略了 you live，靠平行结构补全'
-        '——这是英文里很常见的省略，说的时候记得在 but 前稍作停顿。'
-    )
+# ==================== 长难句 ====================
 
-    async def gen():
-        yield json.dumps({'tags': '主语从句 + not…but 平行结构'}, ensure_ascii=False) + '\n'
-        await asyncio.sleep(0.3)
-        for c in text:
-            yield json.dumps({'delta': c}, ensure_ascii=False) + '\n'
-            await asyncio.sleep(0.018)
-
-    return StreamingResponse(gen(), media_type='application/x-ndjson')
+_parse_thread = []
+_parse_sentence = ''
 
 
-@app.post('/api/chat')
-async def chat(payload: dict = Body(...)):
-    """MOCK：真实版本按 mode 选 engine.stream_local() 或 engine.stream_cloud()"""
+def _remember_parse(full):
+    if full:
+        _parse_thread.append({'role': 'assistant', 'content': full})
+
+
+@app.post('/api/parse/analyze')
+def parse_analyze(payload: dict = Body(...)):
+    """句子结构分析。云端优先 —— 拆从句、判语法角色，本地 4B 不够可靠。"""
+    global _parse_thread, _parse_sentence
+    sentence = (payload.get('sentence') or '').strip()
+    if not sentence:
+        return ndjson(iter([{'error': '（没有收到句子）'}]))
+    _parse_sentence = sentence
+    _parse_thread = [
+        {'role': 'system', 'content': review.SENTENCE_PARSE_SYSTEM_PROMPT},
+        {'role': 'user', 'content': sentence},
+    ]
+    return ndjson(engine.stream_answer(_parse_thread, temperature=0.3), _remember_parse)
+
+
+@app.post('/api/parse/followup')
+def parse_followup(payload: dict = Body(...)):
+    question = (payload.get('question') or '').strip()
+    if not question:
+        return ndjson(iter([{'error': '（没有收到问题）'}]))
+    if not _parse_thread:
+        return ndjson(iter([{'error': '（先分析一个句子）'}]))
+    # 同练习/单词模块：thread 存原话，发给模型的那份才带约束
+    _parse_thread.append({'role': 'user', 'content': question})
+    messages = _parse_thread[:-1] + [
+        {'role': 'user', 'content': question + prompts.FOLLOWUP_GUARD}
+    ]
+    return ndjson(engine.stream_answer(messages, temperature=0.3), _remember_parse)
+
+
+@app.post('/api/parse/save')
+async def parse_save():
+    """用 SUMMARY_PARSE 总结成复习笔记再存。
+
+    那个 prompt 明确要求开头一字不改地引用原句，所以总结里自带原文，
+    不需要额外拼接。
+    """
+    if not _parse_thread:
+        return {'ok': False, 'msg': '还没有可保存的分析'}
+    note = engine.collect(engine.stream_answer(
+        _parse_thread + [{'role': 'user', 'content': review.SUMMARY_PARSE}],
+        temperature=0.2))
+    if not note:
+        return {'ok': False, 'msg': '总结生成失败'}
+    store.save_parse_note(note)
+    return {'ok': True, 'note': note}
+
+
+@app.post('/api/parse/review')
+def parse_review():
+    """跨多条笔记找共性困难，对应终端版 review_parse_summaries()"""
+    notes = store.recent_md('parse', 10)
+    if len(notes) < 2:
+        return ndjson(iter([{'error': f'笔记太少（{len(notes)} 条），攒几条再复习'}]))
+    joined = '\n\n---\n\n'.join(notes)
+    messages = [
+        {'role': 'system', 'content': review.REVIEW_PARSE_SYSTEM_PROMPT},
+        {'role': 'user', 'content': f'以下是我过去的 {len(notes)} 条长难句分析笔记：\n\n{joined}'},
+    ]
+    return ndjson(engine.stream_answer(messages, temperature=0.3))
+
+
+# ==================== 随便问 ====================
+
+# 不含 system 消息 —— 快速/深度两档用的 system prompt 不同，每次请求现拼
+_chat_thread = []
+
+
+def _remember_chat(full):
+    if full:
+        _chat_thread.append({'role': 'assistant', 'content': full})
+
+
+@app.post('/api/chat/send')
+def chat_send(payload: dict = Body(...)):
+    """快速 = 本地优先（CASUAL_CHAT_SYSTEM_PROMPT，短平快）
+       深度 = 云端优先（DEEP_ASK_SYSTEM_PROMPT，讲透）"""
+    message = (payload.get('message') or '').strip()
+    if not message:
+        return ndjson(iter([{'error': '（没有收到内容）'}]))
     deep = payload.get('mode') == 'deep'
-    text = (
-        '这两个在口语里基本通用，但语感有别。a bit 更随意、偏英式，'
-        '带一点"就一点点"的轻描淡写；a little 更中性，书面口语都自然。'
-        '语法上的硬区别在修饰名词时：a little water 可以直接跟，'
-        'a bit 必须加 of，说 a bit of water。'
-    ) if deep else (
-        '口语里基本通用。差别在 a bit 更随意、偏英式，a little 更中性。'
-        '修饰名词时 a little 可以直接跟，a bit 要加 of——'
-        'a little water / a bit of water。'
-    )
-    return await mock_ndjson(list(text), delay=0.02 if deep else 0.012)
+    _chat_thread.append({'role': 'user', 'content': message})
+
+    # 对话太长会拖垮质量也烧额度，只带最近若干轮
+    history = _chat_thread[-12:]
+    system = review.DEEP_ASK_SYSTEM_PROMPT if deep else review.CASUAL_CHAT_SYSTEM_PROMPT
+    messages = [{'role': 'system', 'content': system}] + history
+
+    if deep:
+        events = engine.stream_answer(messages, temperature=0.5)
+    else:
+        events = engine._with_fallback(
+            lambda: engine.stream_local(messages, 0.4),
+            lambda: engine.stream_cloud(messages, 0.4),
+        )
+    return ndjson(events, _remember_chat)
+
+
+@app.post('/api/chat/save')
+async def chat_save():
+    """用 SUMMARY_PROMPT 总结整段对话再存。
+
+    那个 prompt 会先检查 assistant 的回答有没有问题、有错先纠正再总结 ——
+    所以存下来的是修正过的结论，不是原样复述。
+    """
+    if not _chat_thread:
+        return {'ok': False, 'msg': '还没有可保存的对话'}
+    note = engine.collect(engine.stream_answer(
+        _chat_thread + [{'role': 'user', 'content': review.SUMMARY_PROMPT}],
+        temperature=0.2))
+    if not note:
+        return {'ok': False, 'msg': '总结生成失败'}
+    store.save_chat_note(note)
+    return {'ok': True, 'note': note}
+
+
+@app.post('/api/chat/clear')
+async def chat_clear():
+    _chat_thread.clear()
+    return {'ok': True}
 
 
 @app.get('/api/lookup/{word}')

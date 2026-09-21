@@ -167,58 +167,110 @@
     </div>
   </section>
 
-  <!-- ==================== 长难句 ==================== -->
+  <!-- ==================== 长难句 ====================
+       套通用层级：.hero 输入 + 折叠线索 = 主区；.section 过往笔记 = 次级板块 -->
   <section class="view" id="v-parse">
-    <div id="s-result" style="display:none">
-      <div class="en" id="s-sentence" style="font-size:18px;line-height:1.7;margin-bottom:8px"></div>
-      <div class="muted" id="s-tags" style="margin-bottom:18px"></div>
-      <div class="card" id="s-analysis" style="font-size:14px;line-height:1.75;color:var(--text-2)"></div>
-      <div id="s-thread"></div>
-      <div class="inrow" style="margin:14px 0 12px">
-        <div class="field single">
-          <input type="text" id="s-more" placeholder="还有什么不解？">
-          <button class="mic-btn" data-mic="#s-more" aria-label="语音输入">🎙</button>
-          <div class="wave" data-wave></div>
+    <div class="stage" id="s-stage" data-stage="1">
+
+      <div class="hero">
+        <div class="hero-label">拆一句长难句</div>
+        <div class="inrow">
+          <div class="field">
+            <textarea id="s-input" rows="2" placeholder="贴一句想拆解的句子，⌘ + Enter 提交"></textarea>
+            <button class="mic-btn" data-mic="#s-input" aria-label="语音输入">🎙</button>
+            <div class="wave" data-wave></div>
+          </div>
+          <button class="pill acc hero-btn" id="s-go">分析</button>
         </div>
-        <button class="pill acc" id="s-more-send">追问</button>
+        <div class="st1 hint" style="margin-top:12px">分析完可以追问，存成笔记后能回看、也能让模型找出你反复卡住的结构</div>
       </div>
-      <div class="row">
-        <button class="pill acc" id="s-save">存为笔记</button>
-        <button class="pill" id="s-review">复习过往笔记</button>
+
+      <div class="st2up">
+        <div class="line" style="margin-bottom:10px">
+          <span class="en" id="s-sentence" style="font-size:19px;line-height:1.65"></span>
+          <button class="ico" id="s-play" aria-label="朗读这句">🔊</button>
+        </div>
+        <div class="thread" id="s-thread"></div>
+        <div class="s-ready">
+          <div class="inrow" style="margin-top:14px">
+            <div class="field single">
+              <input type="text" id="s-more" placeholder="还有什么不解？">
+              <button class="mic-btn" data-mic="#s-more" aria-label="语音输入">🎙</button>
+              <div class="wave" data-wave></div>
+            </div>
+            <button class="pill acc" id="s-more-send">追问</button>
+          </div>
+          <div class="row" style="margin-top:14px">
+            <button class="pill acc big" id="s-save">总结成复习笔记</button>
+            <button class="invite subtle" id="s-next" style="margin-left:auto">换一句<span class="chev">⌄</span></button>
+          </div>
+          <div id="s-saved"></div>
+        </div>
+        <div class="row" style="margin-top:8px"><span class="hint" id="s-msg"></span></div>
       </div>
-    </div>
-    <div id="s-input-box">
-      <div class="field">
-        <textarea id="s-input" rows="3" placeholder="贴一句想拆解的长难句"></textarea>
-        <button class="mic-btn" data-mic="#s-input" aria-label="语音输入">🎙</button>
-        <div class="wave" data-wave></div>
+
+      <div class="section" id="s-section">
+        <button class="section-head" id="s-book">
+          <span class="section-title">过往笔记</span>
+          <span class="section-count" id="s-count"></span>
+          <span class="chev">⌄</span>
+        </button>
+        <div class="section-body">
+          <div class="row" style="margin-bottom:12px">
+            <button class="pill" id="s-review">找出我反复卡住的结构</button>
+          </div>
+          <div id="s-report"></div>
+          <div id="s-list"></div>
+        </div>
       </div>
-      <div class="row" style="margin-top:12px">
-        <button class="pill acc" id="s-go">分析结构</button>
-      </div>
+
     </div>
   </section>
 
   <!-- ==================== 随便问 ==================== -->
   <section class="view" id="v-chat">
-    <div class="row" style="justify-content:flex-end;margin-bottom:18px">
-      <div class="seg" id="c-mode">
-        <button data-mode="local" class="on">快速</button>
-        <button data-mode="deep">深度</button>
+    <div class="stage" id="c-stage" data-stage="1">
+
+      <div class="hero">
+        <div class="row" style="justify-content:space-between;margin-bottom:11px">
+          <span class="hero-label" style="margin:0">问点什么</span>
+          <div class="seg" id="c-mode">
+            <button data-mode="local" class="on" data-tip="本地模型，答得快、不花额度，适合简单问题">快速</button>
+            <button data-mode="deep" data-tip="云端大模型，讲得透，适合想彻底搞懂的问题">深度</button>
+          </div>
+        </div>
+        <div class="inrow">
+          <div class="field single">
+            <input type="text" id="c-input" placeholder="英语相关的任何疑问，回车发送">
+            <button class="mic-btn" data-mic="#c-input" aria-label="语音输入">🎙</button>
+            <div class="wave" data-wave></div>
+          </div>
+          <button class="pill acc hero-btn" id="c-send">发送</button>
+        </div>
       </div>
-    </div>
-    <div class="bubbles en" id="c-bubbles"></div>
-    <div class="inrow">
-      <div class="field single">
-        <input type="text" id="c-input" placeholder="你想聊什么？">
-        <button class="mic-btn" data-mic="#c-input" aria-label="语音输入">🎙</button>
-        <div class="wave" data-wave></div>
+
+      <div class="bubbles en" id="c-bubbles"></div>
+      <div class="c-ready">
+        <div class="row" style="margin-top:6px">
+          <button class="pill acc big" id="c-save">总结这次对话，存进档案</button>
+          <button class="invite subtle" id="c-clear" style="margin-left:auto">清空重开<span class="chev">⌄</span></button>
+        </div>
+        <div id="c-saved"></div>
       </div>
-      <button class="pill acc" id="c-send">发送</button>
-    </div>
-    <div class="row" style="margin-top:12px">
-      <button class="pill" id="c-save">总结存档</button>
-      <span class="hint">选中任意英文词可查词典</span>
+      <div class="row" style="margin-top:8px">
+        <span class="hint" id="c-msg"></span>
+        <span class="hint" style="margin-left:auto">选中任意英文词可查词典</span>
+      </div>
+
+      <div class="section" id="c-section">
+        <button class="section-head" id="c-book">
+          <span class="section-title">过往对话总结</span>
+          <span class="section-count" id="c-count"></span>
+          <span class="chev">⌄</span>
+        </button>
+        <div class="section-body"><div id="c-list"></div></div>
+      </div>
+
     </div>
   </section>
 

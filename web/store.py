@@ -148,6 +148,27 @@ def _write_words(words):
         json.dumps(words, ensure_ascii=False, indent=4), encoding='utf-8')
 
 
+# ---------- 追加两个 md 笔记 ----------
+#
+# save_path 里这两个函数是纯追加、没有交互式 prompt()，可以安全复用
+# （不像 save_word_summary 会弹确认把请求挂死）。
+
+def save_parse_note(text):
+    from save_path import save_parse_summary
+    save_parse_summary(text)
+
+
+def save_chat_note(text):
+    from save_path import save_chat_summary
+    save_chat_summary(text)
+
+
+def recent_md(kind, n=10):
+    """取最近 n 条 md 笔记的正文，供"复习过往笔记"用"""
+    path = PARSE_SUMMARY_LOG if kind == 'parse' else CHAT_SUMMARY_LOG
+    return [e['body'] for e in _load_md_entries(path)][-n:]
+
+
 # ---------- 删除 / 撤销 ----------
 
 # 只留最近一次删除，供撤销用。本地单用户程序，放内存够了；
