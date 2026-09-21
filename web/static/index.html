@@ -74,6 +74,15 @@
           <button class="pill acc big" id="p-save-note">总结这段讨论，存进记录</button>
           <button class="invite subtle" id="p-again" style="margin-left:auto">换一句继续练<span class="chev">⌄</span></button>
         </div>
+        <!-- 存完把实际存进去的内容显示出来，让用户能当场确认总结对不对 -->
+        <div id="p-saved"></div>
+      </div>
+
+      <!-- 就地翻看最近的记录，不用跳去档案页。对应终端版的 /doc。
+           阶段① 不显示，那一屏要保持干净。 -->
+      <div class="st234">
+        <button class="invite subtle" id="p-recent">看看最近存的几条<span class="chev">⌄</span></button>
+        <div id="p-recent-list"></div>
       </div>
 
       <div class="row" style="margin-top:6px;justify-content:space-between">

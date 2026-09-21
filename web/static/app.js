@@ -236,6 +236,9 @@ function resetStage() {
   $('#p-save').disabled = false;
   $('#p-save-note').textContent = '总结这段讨论，存进记录';
   $('#p-save-note').disabled = false;
+  $('#p-saved').innerHTML = '';
+  $('#p-recent-list').innerHTML = '';
+  $('#p-recent').classList.remove('open');
   setStage(1);
   $('#p-input').focus();
 }
@@ -248,6 +251,13 @@ async function correct() {
   state.revised = '';
   $('#p-input').value = '';
   setStage(2);
+  // 换了新句子，上一句的解析线索和存档状态都得清掉 ——
+  // 不清的话前一句的追问会挂在新句子下面（走「换一句继续练」时 resetStage 会清，
+  // 但直接在 ① 里改一句再提交不经过那条路）
+  $('#p-thread').innerHTML = '';
+  $('#p-saved').innerHTML = '';
+  $('#p-recent-list').innerHTML = '';
+  $('#p-recent').classList.remove('open');
   $('#p-draft').textContent = text;
   const rev = $('#p-revised');
   rev.textContent = '';
@@ -334,10 +344,20 @@ $('#p-save-note').addEventListener('click', async (e) => {
   btn.disabled = true;
   const r = await (await fetch('/api/practice/save-note', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ revised: state.revised }),
+    body: JSON.stringify({ revised: state.revised, draft: state.draft }),
   })).json();
   if (r.ok) {
     btn.textContent = r.summarized ? '✓ 已总结并存进记录' : '✓ 已存进记录';
+    // 把实际存进去的那段话显示出来 —— 后端本来就返回了，之前前端丢掉了，
+    // 等于让用户存了一段自己没读过的东西进档案
+    $('#p-saved').innerHTML =
+      `<div class="card slide-up" style="margin-top:12px">
+         <div class="label acc">${r.summarized ? '存进记录的总结' : '存进记录的内容'}</div>
+         <div class="md"></div>
+       </div>`;
+    $('#p-saved .md').innerHTML = mdToHtml(r.note || '');
+    $('#p-recent-list').innerHTML = '';        // 记录变了，下次展开重新取
+    $('#p-recent').classList.remove('open');
   } else {
     btn.textContent = label;
     btn.disabled = false;
@@ -351,6 +371,29 @@ $('#p-why').addEventListener('click', () => {
 });
 
 $('#p-again').addEventListener('click', resetStage);
+
+/* 就地翻看最近记录，对应终端版练习循环里的 /doc（它也是只打印最近 3 条）。
+   复用档案页的接口和卡片样式，不用动后端。 */
+$('#p-recent').addEventListener('click', async (e) => {
+  const box = $('#p-recent-list');
+  if (box.innerHTML) {                       // 再点一次收起
+    box.innerHTML = '';
+    e.target.classList.remove('open');
+    return;
+  }
+  e.target.classList.add('open');
+  box.innerHTML = '<div class="hint">读取中…</div>';
+  const items = await (await fetch('/api/archive?filter=draft')).json();
+  if (!items.length) { box.innerHTML = '<div class="hint">还没有记录</div>'; return; }
+  box.innerHTML = items.slice(0, 3).map((it, i) => `
+    <div class="arc-card draft-kind slide-up" style="animation-delay:${i * 60}ms">
+      <div class="arc-head"><span class="kind">${it.kindLabel}</span><span class="when">${it.when}</span></div>
+      ${it.old ? `<div class="arc-old en">${esc(it.old)}</div>` : ''}
+      <div class="arc-new en">${esc(it.title || '')}</div>
+      ${it.note ? `<div class="arc-note">${esc(it.note)}</div>` : ''}
+    </div>`).join('') +
+    `<div class="hint" style="margin-top:6px">以上是最近 3 条，更多在「档案」页</div>`;
+});
 
 /* 输入框统一走这个：键盘和按钮两条路都要有，不能只留快捷键。
    单行 input 用回车提交；textarea 里回车是换行，改用 ⌘/Ctrl + 回车。 */

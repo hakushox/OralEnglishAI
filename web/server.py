@@ -126,16 +126,19 @@ async def save(payload: dict = Body(...)):
 async def save_note(payload: dict = Body(...)):
     """把「为什么这么改」的讨论挂到对应记录上。
 
-    聊得多了就先总结再存 —— 对齐终端版 edgetts.py:944 的做法：
-    追问超过两轮时，整段讨论压成 80 字的笔记，而不是只留最后一条回复
-    （否则前面问出来的东西全丢了）。
+    只要追问过就先总结再存。
+
+    终端版 edgetts.py:944 的阈值是"追问超过 3 次"，太高了：
+    只追问一轮时它存最后一条回复，而第一轮的语法分析（真正的重点）就丢了。
+    这里改成只有"从没追问过"才直接存那一条，否则一律总结。
     """
     revised = (payload.get('revised') or '').strip()
+    draft = (payload.get('draft') or '').strip()
     answers = [m['content'] for m in _why_thread if m['role'] == 'assistant']
     if not revised or not answers:
         return {'ok': False, 'msg': '没有可保存的分析'}
 
-    if len(answers) > 2:
+    if len(answers) > 1:
         note = engine.collect(engine.stream_answer(
             _why_thread + [{'role': 'user', 'content': review.SAVE_NOTE_SUMMARY_PROMPT}],
             temperature=0.2))
@@ -143,8 +146,8 @@ async def save_note(payload: dict = Body(...)):
     else:
         note = answers[-1]
 
-    matched = store.add_note(revised, note)
-    return {'ok': True, 'matched': matched, 'summarized': len(answers) > 2, 'note': note}
+    matched = store.add_note(revised, note, draft)
+    return {'ok': True, 'matched': matched, 'summarized': len(answers) > 1, 'note': note}
 
 
 @app.post('/api/practice/transcribe')

@@ -46,10 +46,12 @@ def append_record(draft, revised, notes=None):
     return len(records)
 
 
-def add_note(revised, note):
+def add_note(revised, note, draft=''):
     """把一段「为什么这么改」的分析挂到对应记录上。
 
-    按 revised 匹配（跟终端版一致）。找不到就新建一条，避免分析白写。
+    按 revised 匹配（跟终端版一致）。找不到就新建一条，避免分析白写 ——
+    新建时必须带上 draft，否则用户没先点「存进档案」就直接存分析的话，
+    档案里会多出一条原句为空的残缺记录。
     """
     records = load_records()
     for item in records:
@@ -57,7 +59,7 @@ def add_note(revised, note):
             item.setdefault('notes', []).append(note)
             _write_records(records)
             return True
-    records.append({'draft': '', 'revised': revised, 'notes': [note]})
+    records.append({'draft': draft, 'revised': revised, 'notes': [note]})
     _write_records(records)
     return False
 

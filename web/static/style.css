@@ -166,7 +166,11 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 .stage[data-stage="3"] .st2,
 .stage[data-stage="3"] .st4,
 .stage[data-stage="4"] .st1,
-.stage[data-stage="4"] .st2 { display: none; }
+.stage[data-stage="4"] .st2,
+.stage[data-stage="1"] .st234 { display: none; }
+
+/* 展开后箭头翻转，跟折叠线索的标题头一个规则 */
+.invite.open .chev { transform: rotate(180deg); animation: none; }
 
 .slide-up { animation: slideup 0.5s var(--ease) both; }
 @keyframes slideup { from { opacity: 0; transform: translateY(14px); } }
