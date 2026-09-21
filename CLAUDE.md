@@ -55,9 +55,22 @@
    接上之后生词本卡片上那些「未测」才会变成真实熟练度。
 2. **选词浮层** —— `/api/lookup/{word}` 是占位释义。打算用本地 ollama 快速出一句。
 
-**不在功能清单里但必须做的：打包。**
+**不在功能清单里但必须做的：打包（建议下一步就做）。**
+
 pyinstaller 入口还指着 `edgetts.py`，`web/static/` 也没作为数据文件塞进去，
-`SpeakNaturalLauncher.app` 还是启动终端版。这是"能分发的程序"这个原始目标的最后一环。
+`SpeakNaturalLauncher.app` 双击启动的还是终端版。这是"能分发的程序"这个原始目标的最后一环。
+
+**建议先做打包而不是先补功能** —— 它会暴露一批现在看不见的问题，越晚发现越贵。
+已经预见到的几个：
+
+| 问题 | 说明 |
+| --- | --- |
+| 静态文件路径 | `web/server.py` 用 `Path(__file__).parent / 'static'`，frozen 环境下要走 `sys._MEIPASS`；`web/static/*` 必须作为 datas 打进去 |
+| whisper 模型 | 缓存在 `~/.cache/huggingface/hub`（`faster-whisper-large-v3-turbo`，约 1.5GB）。用户机器上没有，首次录音会静默下载很久 —— 要么随包分发，要么在界面上明确提示进度 |
+| ollama | `engine.get_local_model()` 靠 `subprocess` 跑 `ollama list`。用户没装 ollama 时纠正会回落到云端，行为正确但要在界面上说清楚 |
+| 端口占用 | `run_web.py` 硬编码 8765，被占用时直接抛异常退出。打包版应该自动换端口或给出明确提示 |
+| 入口 | pyinstaller 的入口要换成 `run_web.py`；`.app` 的 AppleScript（见仓库里 `for AppleScript`）也要跟着改 |
+| 依赖收集 | `--collect-all faster_whisper`、`uvicorn` 和 `fastapi` 的动态导入都要显式收集，参考 `notes` 里现有的命令 |
 
 ## 怎么跑
 
