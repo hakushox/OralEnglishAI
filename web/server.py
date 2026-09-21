@@ -199,6 +199,24 @@ async def archive(filter: str = 'all'):
     return store.archive_items(filter)
 
 
+@app.post('/api/archive/delete')
+async def delete_record(payload: dict = Body(...)):
+    """删一条记录。删掉的内容在内存里留一份，可以撤销 ——
+    这是用户攒了很久的学习档案，误删不该没救。"""
+    kind = payload.get('kind') or ''
+    index = payload.get('id')
+    if not isinstance(index, int):
+        return {'ok': False, 'msg': '缺少记录编号'}
+    ok = store.delete_item(kind, index)
+    return {'ok': ok, 'msg': '' if ok else '这条记录已经不在了，刷新一下看看'}
+
+
+@app.post('/api/archive/undo')
+async def undo_delete():
+    ok = store.restore_last()
+    return {'ok': ok, 'msg': '' if ok else '没有可撤销的删除'}
+
+
 @app.post('/api/archive/analyze')
 def analyze_patterns():
     """分析语法习惯。复用 review.py:REVIEW_SYSTEM_PROMPT，

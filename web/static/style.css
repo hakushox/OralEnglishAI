@@ -361,12 +361,35 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 @keyframes blink { 50% { opacity: 0; } }
 
 /* ============ 档案 ============ */
+/* 卡片外壳：删除按钮压在下面，卡片本体左滑露出它 */
+.arc-wrap {
+  position: relative; overflow: hidden;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  margin-bottom: 10px;
+  animation: fade 0.3s var(--ease) both;
+  transition: height 0.28s var(--ease), opacity 0.28s var(--ease),
+              margin 0.28s var(--ease);
+}
+.arc-wrap.removing { height: 0 !important; opacity: 0; margin-bottom: 0; }
+
+.arc-del {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 84px;
+  border: none; background: #5a2523; color: #f0c9c6;
+  font: inherit; font-size: 13px; cursor: pointer;
+  transition: background 0.15s var(--ease);
+}
+.arc-del:hover { background: #71302c; }
+
 .arc-card {
+  position: relative;
   background: var(--surface); border-left: 2px solid var(--text-3);
   border-radius: 0 var(--radius) var(--radius) 0;
-  padding: 16px 18px; margin-bottom: 10px;
-  animation: fade 0.3s var(--ease) both;
+  padding: 16px 18px;
+  transition: transform 0.28s var(--ease), background 0.15s var(--ease);
+  touch-action: pan-y;          /* 纵向留给页面滚动，横向自己处理 */
+  user-select: none;
 }
+.arc-wrap.open .arc-card { transform: translateX(-84px); }
 .arc-card.draft-kind { border-left-color: var(--accent); }
 .arc-head { display: flex; gap: 10px; margin-bottom: 8px; font-size: 11px; }
 .arc-head .kind { color: var(--text-3); }
@@ -397,6 +420,26 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 }
 .arc-card.open .arc-head .chev { transform: rotate(180deg); }
 .arc-body table { font-size: 12px; }
+
+/* ============ 提示条（带撤销） ============ */
+#toast {
+  position: fixed; left: 50%; bottom: 26px; transform: translate(-50%, 20px);
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface-2); border: 0.5px solid var(--border);
+  border-radius: 999px; padding: 10px 10px 10px 18px;
+  font-size: 13px; color: var(--text-2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  opacity: 0; pointer-events: none; z-index: 80;
+  transition: opacity 0.25s var(--ease), transform 0.25s var(--ease);
+}
+#toast.on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+#toast:empty { display: none; }
+.toast-act {
+  background: var(--accent-bg-2); color: var(--accent-text);
+  border: none; border-radius: 999px; padding: 6px 15px;
+  font: inherit; font-size: 13px; cursor: pointer;
+}
+.toast-act:hover { background: #245442; }
 
 /* ============ 悬停提示 ============ */
 .tip {

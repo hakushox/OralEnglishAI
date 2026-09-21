@@ -94,6 +94,68 @@ def _load_md_entries(path):
     return entries
 
 
+def _write_md_entries(path, entries):
+    """按 save_chat_summary() 的格式重建整个文件。
+
+    格式很简单（反复追加 '\n## 时间戳\n正文\n'），所以解析-重建是无损的，
+    但这是终端版也在追加的文件，改之前跑过往返一致性检查。
+    """
+    path.write_text(
+        ''.join(f'\n## {e["when"]}\n{e["body"]}\n' for e in entries),
+        encoding='utf-8')
+
+
+def _write_words(words):
+    WORDS_SUMMARY_LOG.write_text(
+        json.dumps(words, ensure_ascii=False, indent=4), encoding='utf-8')
+
+
+# ---------- 删除 / 撤销 ----------
+
+# 只留最近一次删除，供撤销用。本地单用户程序，放内存够了；
+# 进程重启后撤销不了，但那时用户早就离开这个界面了。
+_last_deleted = None
+
+
+def _source(kind):
+    """返回 (读函数, 写函数)，把四类记录各自的存储差异收在这里"""
+    if kind == 'draft':
+        return load_records, _write_records
+    if kind == 'word':
+        return load_words, _write_words
+    if kind in ('parse', 'chat'):
+        path = PARSE_SUMMARY_LOG if kind == 'parse' else CHAT_SUMMARY_LOG
+        return (lambda: _load_md_entries(path),
+                lambda items: _write_md_entries(path, items))
+    return None, None
+
+
+def delete_item(kind, index):
+    read, write = _source(kind)
+    if read is None:
+        return False
+    items = read()
+    if not 0 <= index < len(items):
+        return False
+    global _last_deleted
+    _last_deleted = (kind, index, items.pop(index))
+    write(items)
+    return True
+
+
+def restore_last():
+    global _last_deleted
+    if _last_deleted is None:
+        return False
+    kind, index, payload = _last_deleted
+    read, write = _source(kind)
+    items = read()
+    items.insert(min(index, len(items)), payload)      # 插回原位，不是追加到末尾
+    write(items)
+    _last_deleted = None
+    return True
+
+
 # ---------- 档案页 ----------
 
 def _first_line(text, limit=60):
@@ -116,40 +178,42 @@ def archive_items(kind='all'):
     items = []
 
     records = load_records()
-    for idx, r in enumerate(reversed(records), start=1):
+    total = len(records)
+    for pos, r in enumerate(reversed(records)):
+        real = total - 1 - pos                  # 在 RECORDS 里的真实下标，删除时要用
         note = (r.get('notes') or [None])[-1]
         items.append({
-            'kind': 'draft', 'kindLabel': '造句',
-            'when': f'第 {len(records) - idx + 1} 条',
+            'kind': 'draft', 'kindLabel': '造句', 'id': real,
+            'when': f'第 {real + 1} 条',
             'old': r.get('draft') or '',
             'title': r.get('revised') or '',
             'note': note or '',
         })
 
     timed = []
-    for w in load_words():
+    for wi, w in enumerate(load_words()):
         detail = w.get('usage') or ''
         if w.get('proficiency') is not None:
             detail = f"熟练度 {w['proficiency']}/4 · " + detail
         timed.append({
-            'kind': 'word', 'kindLabel': '单词',
+            'kind': 'word', 'kindLabel': '单词', 'id': wi,
             'when': w.get('time', ''),
             'title': w.get('word', ''),
             'body': detail,
         })
 
-    for e in _load_md_entries(PARSE_SUMMARY_LOG):
+    for ei, e in enumerate(_load_md_entries(PARSE_SUMMARY_LOG)):
         head = _first_line(e['body'])
         timed.append({
-            'kind': 'parse', 'kindLabel': '句型',
+            'kind': 'parse', 'kindLabel': '句型', 'id': ei,
             'when': e['when'],
             'title': head,
             'body': e['body'][len(head):].lstrip(),
         })
 
-    for e in _load_md_entries(CHAT_SUMMARY_LOG):
+    for ei, e in enumerate(_load_md_entries(CHAT_SUMMARY_LOG)):
         timed.append({
-            'kind': 'chat', 'kindLabel': '对话',
+            'kind': 'chat', 'kindLabel': '对话', 'id': ei,
             'when': e['when'],
             'body': e['body'],
         })

@@ -385,7 +385,7 @@ $('#p-recent').addEventListener('click', async (e) => {
   box.innerHTML = '<div class="hint">读取中…</div>';
   const items = await (await fetch('/api/archive?filter=draft')).json();
   if (!items.length) { box.innerHTML = '<div class="hint">还没有记录</div>'; return; }
-  renderCards(items.slice(0, 3), box);
+  renderCards(items.slice(0, 3), box, () => { box.innerHTML = ''; $('#p-recent').click(); });
   box.insertAdjacentHTML('beforeend',
     '<div class="hint" style="margin-top:6px">以上是最近 3 条，更多在「档案」页</div>');
 });
@@ -597,35 +597,130 @@ bindSend('#c-input', '#c-send', async (msg) => {
    正文默认收起两行，够长的卡片整张可点展开。
    后端发的是全文，截断只发生在 CSS 层 —— 之前后端就截好了，
    前端连全文都拿不到，点开也只有节选。 */
-function renderCards(items, box) {
+const SWIPE_W = 84;        // 删除按钮的宽度，也是滑开的距离
+let justDragged = false;   // 拖动过就不要触发"点击展开"
+
+function renderCards(items, box, onChange) {
   box.innerHTML = items.map((it, i) => {
     const extra = it.note || it.body || '';
     const long = extra.length > 80;
+    const tips = [long ? '点击展开全文' : '', '左滑删除'].filter(Boolean).join(' · ');
     return `
-    <div class="arc-card ${it.kind === 'draft' ? 'draft-kind' : ''}${long ? ' expandable' : ''}"
-         style="animation-delay:${i * 45}ms"${long ? ' data-exp' : ''}
-         ${long ? 'title="点击展开全文"' : ''}>
-      <div class="arc-head">
-        <span class="kind">${it.kindLabel}</span><span class="when">${it.when}</span>
-        ${long ? '<span class="chev">⌄</span>' : ''}
+    <div class="arc-wrap" style="animation-delay:${i * 45}ms">
+      <button class="arc-del" data-kind="${it.kind}" data-id="${it.id}">删除</button>
+      <div class="arc-card ${it.kind === 'draft' ? 'draft-kind' : ''}${long ? ' expandable' : ''}"
+           ${long ? 'data-exp' : ''} title="${tips}">
+        <div class="arc-head">
+          <span class="kind">${it.kindLabel}</span><span class="when">${it.when}</span>
+          ${long ? '<span class="chev">⌄</span>' : ''}
+        </div>
+        ${it.old ? `<div class="arc-old en">${esc(it.old)}</div>` : ''}
+        ${it.title ? `<div class="arc-new en">${esc(it.title)}</div>` : ''}
+        ${extra ? `<div class="arc-body">${mdToHtml(extra)}</div>` : ''}
       </div>
-      ${it.old ? `<div class="arc-old en">${esc(it.old)}</div>` : ''}
-      ${it.title ? `<div class="arc-new en">${esc(it.title)}</div>` : ''}
-      ${extra ? `<div class="arc-body">${mdToHtml(extra)}</div>` : ''}
     </div>`;
   }).join('');
 
+  $$('.arc-wrap', box).forEach(enableSwipe);
+
   $$('[data-exp]', box).forEach((card) => card.addEventListener('click', (e) => {
-    if (e.target.closest('a')) return;               // 卡片里的链接照常跳转
+    if (e.target.closest('a') || justDragged) return;     // 卡片里的链接照常跳转
+    if (card.closest('.arc-wrap').classList.contains('open')) return;  // 露出删除时点击只用于收回
     card.classList.toggle('open');
   }));
+
+  $$('.arc-del', box).forEach((btn) => btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const wrap = btn.closest('.arc-wrap');
+    const r = await post('/api/archive/delete',
+      { kind: btn.dataset.kind, id: Number(btn.dataset.id) });
+    if (!r.ok) { toast(r.msg || '删除失败'); return; }
+    wrap.style.height = wrap.offsetHeight + 'px';
+    requestAnimationFrame(() => wrap.classList.add('removing'));
+    setTimeout(() => wrap.remove(), 300);
+    // 攒了很久的学习档案，误删不该没救
+    toast('已删除', '撤销', async () => {
+      const u = await post('/api/archive/undo', {});
+      if (u.ok && onChange) onChange();
+      else if (!u.ok) toast(u.msg || '撤销失败');
+    });
+  }));
+}
+
+/* 左滑露出删除。支持鼠标拖、触控板横滑、触屏滑动（pointer 事件统一处理）。 */
+function enableSwipe(wrap) {
+  const card = $('.arc-card', wrap);
+  let startX = 0, dragging = false, moved = 0;
+
+  const finish = (dx) => {
+    dragging = false;
+    card.style.transition = '';
+    card.style.transform = '';
+    if (dx < -30) wrap.classList.add('open');
+    else if (dx > 30) wrap.classList.remove('open');
+    justDragged = moved > 6;
+    setTimeout(() => { justDragged = false; }, 60);
+  };
+
+  card.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    startX = e.clientX; dragging = true; moved = 0;
+    card.style.transition = 'none';
+  });
+
+  card.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    moved = Math.abs(dx);
+    if (moved < 4) return;
+    const base = wrap.classList.contains('open') ? -SWIPE_W : 0;
+    card.style.transform =
+      `translateX(${Math.max(-SWIPE_W, Math.min(0, base + dx))}px)`;
+  });
+
+  card.addEventListener('pointerup', (e) => dragging && finish(e.clientX - startX));
+  card.addEventListener('pointercancel', () => dragging && finish(0));
+  card.addEventListener('pointerleave', (e) => dragging && finish(e.clientX - startX));
+
+  // 触控板双指横滑
+  card.addEventListener('wheel', (e) => {
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    e.preventDefault();
+    if (e.deltaX > 8) wrap.classList.add('open');
+    if (e.deltaX < -8) wrap.classList.remove('open');
+  }, { passive: false });
+}
+
+async function post(url, body) {
+  return (await fetch(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })).json();
+}
+
+/* 带可选操作的提示条。删除这类不可逆动作靠它给撤销的机会，
+   比弹个确认框打断流程好 —— 确认框会让人养成条件反射点确定。 */
+let toastTimer = null;
+function toast(text, actionLabel, onAction, ms = 6000) {
+  clearTimeout(toastTimer);
+  const box = $('#toast');
+  box.innerHTML = `<span>${esc(text)}</span>` +
+    (actionLabel ? `<button class="toast-act">${esc(actionLabel)}</button>` : '');
+  box.classList.add('on');
+  if (actionLabel) {
+    $('.toast-act', box).addEventListener('click', () => {
+      box.classList.remove('on');
+      onAction();
+    });
+  }
+  toastTimer = setTimeout(() => box.classList.remove('on'), ms);
 }
 
 /* ==================== 档案 ==================== */
 async function loadArchive(filter) {
   const items = await (await fetch('/api/archive?filter=' + filter)).json();
   if (filter === 'all') $('#arc-count').textContent = items.length;  // 导航上是总数，不跟着筛选变
-  renderCards(items, $('#a-list'));
+  renderCards(items, $('#a-list'), () => loadArchive(filter));
 }
 $('#a-analyze').addEventListener('click', async (e) => {
   const box = $('#a-report');
