@@ -399,6 +399,15 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 .invite.subtle:hover { color: var(--text-2); }
 @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(3px); } }
 
+/* 「换一句 / 清空重开」：图标是 ↻，每隔几秒转一整圈。
+   不用一直匀速转 —— 那会变成背景噪音；周期性转一下才是"提醒"。 */
+.invite.restart .chev { animation: restartSpin 4.5s var(--ease) infinite; }
+.invite.restart:hover .chev { animation-duration: 1.2s; }
+@keyframes restartSpin {
+  0%, 72% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
 /* ============ 书签：保存的统一入口 ============
    所有模块的"存进记录"都用这个：读完一段内容后滑入并脉动两下。
    出现的那个动作就是提示，不需要文字标签，也不占版面。 */
@@ -427,6 +436,14 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
   padding: 13px 0; transition: color 0.15s var(--ease);
 }
 .round-head:hover { color: var(--text-2); }
+/* 序号：收起之后能一眼看出聊到第几轮 */
+.round-num {
+  flex: none; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--surface-2); color: var(--text-4);
+  font-size: 10px; font-style: normal; line-height: 18px; text-align: center;
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.round.open .round-num { background: var(--accent-bg); color: var(--accent-text); }
 .round.open .round-head { color: var(--text); }
 .round-head .chev {
   margin-left: auto; color: var(--text-5); font-size: 13px;

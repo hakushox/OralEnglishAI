@@ -324,10 +324,11 @@ function addRound(title, threadSel = '#p-thread') {
   const thread = $(threadSel);
   $$('.round', thread).forEach((r) => r.classList.remove('open'));   // 新的一轮进来，旧的收起
 
+  const n = $$('.round', thread).length + 1;   // 序号：收起后能看出聊到第几轮
   const el = document.createElement('div');
   el.className = 'round open';
   el.innerHTML = `
-    <button class="round-head"><span>${esc(title)}</span><span class="chev">⌄</span></button>
+    <button class="round-head"><i class="round-num">${n}</i><span>${esc(title)}</span><span class="chev">⌄</span></button>
     <div class="round-body"><div class="card md"></div></div>`;
   thread.appendChild(el);
 
@@ -781,6 +782,33 @@ function glossOf(md) {
   return text.slice(0, 56) || '（还没有笔记）';
 }
 
+/* 卡片正面用的纯文本：剥掉 markdown 标记。
+   直接 esc() 会把 ** 和 # 原样露出来，渲染成 HTML 又不适合只放一两行的正面。 */
+function plainText(md) {
+  return (md || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/[*`_>#|]/g, '')
+    .replace(/\[(.*?)\]\(.*?\)/g, '$1')
+    .replace(/\s*\n\s*/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+/* 笔记正文里挑一行当标题：跳过「【原句】」这类纯格式标记行 */
+function noteTitle(text) {
+  const lines = (text || '').split('\n').map((l) => plainText(l)).filter(Boolean);
+  return lines.find((l) => !/^【.*】$/.test(l) && l.length > 2) || lines[0] || '（无内容）';
+}
+
+/* 摘要要跳过已经当标题用掉的那句，否则卡片上同一句话出现两遍 */
+function noteGloss(text, limit = 100) {
+  const title = noteTitle(text);
+  const full = plainText(text);
+  const at = full.indexOf(title);
+  const rest = at >= 0 ? full.slice(at + title.length) : full;
+  return rest.replace(/^[\s，。、：:]+/, '').slice(0, limit);
+}
+
 const deckStars = (s) => s
   ? `<span class="stars">${esc(s)}</span>`
   : '<span class="stars" style="color:var(--text-5)" title="解析里没给星级">—</span>';
@@ -1110,7 +1138,9 @@ $('#s-save').addEventListener('click', async (e) => {
   $('#s-saved .md').innerHTML = mdToHtml(r.note || '');
   $('#s-next').classList.add('pulse');
   refreshParseCount();
-  $('#s-list').innerHTML = '';
+  $('#s-deck').innerHTML = '';
+  $('#s-pager').hidden = true;
+  $('#s-foot').hidden = true;
   $('#s-section').classList.remove('open');
 });
 
@@ -1136,19 +1166,52 @@ $('#s-review').addEventListener('click', async (e) => {
   btn.disabled = false;
 });
 
-$('#s-book').addEventListener('click', async (e) => {
+/* 过往笔记也走通用轮播，跟生词本、练习记录同一套交互 */
+async function loadParseBook() {
+  const items = await (await fetch('/api/archive?filter=parse')).json();
+  mountCoverflow({
+    deck: $('#s-deck'), pager: $('#s-pager'), foot: $('#s-foot'),
+    posEl: $('#s-pos'), dotBox: $('#s-dots'),
+    prev: $('#s-prev'), next: $('#s-next-card'),
+    items,
+    emptyText: '还没有笔记，分析一句存一条试试',
+    tile: (it) => `
+      <div class="wbig-top"><span class="wbig-badge">${esc(it.when)}</span></div>
+      <div class="wbig-new en">${esc(noteTitle((it.title || '') + '\n' + (it.body || '')))}</div>
+      <div class="wbig-gloss">${esc(noteGloss((it.title || '') + '\n' + (it.body || '')))}</div>
+      <div class="wbig-foot"><span>点开看完整笔记</span><span class="chev">⌄</span></div>
+      <div class="wbig-detail"><div class="wbig-detail-inner">
+        <div class="card md">${mdToHtml((it.title || '') + '\n\n' + (it.body || ''))}</div>
+        <div class="row" style="margin-top:12px">
+          <button class="pill" data-act="del" style="margin-left:auto;background:#5a2523;color:#f0c9c6">删除</button>
+        </div>
+      </div></div>`,
+    onAction: async (act, it) => {
+      const r = await post('/api/archive/delete', { kind: 'parse', id: it.id });
+      if (!r.ok) { toast(r.msg || '删除失败'); return; }
+      toast('已删除这条笔记', '撤销', async () => {
+        const u = await post('/api/archive/undo', {});
+        if (u.ok) { await loadParseBook(); refreshParseCount(); } else toast(u.msg || '撤销失败');
+      });
+      await loadParseBook();
+      refreshParseCount();
+    },
+  });
+}
+
+$('#s-book').addEventListener('click', (e) => {
   e.currentTarget.blur();
   const sec = $('#s-section');
   if (sec.classList.contains('open')) {
     sec.classList.remove('open');
-    $('#s-list').innerHTML = '';
+    $('#s-deck').innerHTML = '';
+    $('#s-pager').hidden = true;
+    $('#s-foot').hidden = true;
+    activeDeck = null;
     return;
   }
   sec.classList.add('open');
-  $('#s-list').innerHTML = '<div class="hint">读取中…</div>';
-  const items = await (await fetch('/api/archive?filter=parse')).json();
-  if (!items.length) { $('#s-list').innerHTML = '<div class="hint">还没有笔记</div>'; return; }
-  renderCards(items, $('#s-list'), () => $('#s-book').click());
+  loadParseBook();
 });
 
 async function refreshParseCount() {
@@ -1203,7 +1266,9 @@ $('#c-save').addEventListener('click', async (e) => {
      </div>`;
   $('#c-saved .md').innerHTML = mdToHtml(r.note || '');
   refreshChatCount();
-  $('#c-list').innerHTML = '';
+  $('#c-deck').innerHTML = '';
+  $('#c-pager').hidden = true;
+  $('#c-foot').hidden = true;
   $('#c-section').classList.remove('open');
 });
 
@@ -1215,19 +1280,50 @@ $('#c-clear').addEventListener('click', async () => {
   $('#c-input').focus();
 });
 
-$('#c-book').addEventListener('click', async (e) => {
+async function loadChatBook() {
+  const items = await (await fetch('/api/archive?filter=chat')).json();
+  mountCoverflow({
+    deck: $('#c-deck'), pager: $('#c-pager'), foot: $('#c-foot'),
+    posEl: $('#c-pos'), dotBox: $('#c-dots'),
+    prev: $('#c-prev'), next: $('#c-next-card'),
+    items,
+    emptyText: '还没有对话总结，聊完存一条试试',
+    tile: (it) => `
+      <div class="wbig-top"><span class="wbig-badge">${esc(it.when)}</span></div>
+      <div class="wbig-gloss" style="font-size:14px;color:var(--text-2);-webkit-line-clamp:4">${esc(plainText(it.body).slice(0, 150))}</div>
+      <div class="wbig-foot"><span>点开看完整总结</span><span class="chev">⌄</span></div>
+      <div class="wbig-detail"><div class="wbig-detail-inner">
+        <div class="card md">${mdToHtml(it.body || '')}</div>
+        <div class="row" style="margin-top:12px">
+          <button class="pill" data-act="del" style="margin-left:auto;background:#5a2523;color:#f0c9c6">删除</button>
+        </div>
+      </div></div>`,
+    onAction: async (act, it) => {
+      const r = await post('/api/archive/delete', { kind: 'chat', id: it.id });
+      if (!r.ok) { toast(r.msg || '删除失败'); return; }
+      toast('已删除这条总结', '撤销', async () => {
+        const u = await post('/api/archive/undo', {});
+        if (u.ok) { await loadChatBook(); refreshChatCount(); } else toast(u.msg || '撤销失败');
+      });
+      await loadChatBook();
+      refreshChatCount();
+    },
+  });
+}
+
+$('#c-book').addEventListener('click', (e) => {
   e.currentTarget.blur();
   const sec = $('#c-section');
   if (sec.classList.contains('open')) {
     sec.classList.remove('open');
-    $('#c-list').innerHTML = '';
+    $('#c-deck').innerHTML = '';
+    $('#c-pager').hidden = true;
+    $('#c-foot').hidden = true;
+    activeDeck = null;
     return;
   }
   sec.classList.add('open');
-  $('#c-list').innerHTML = '<div class="hint">读取中…</div>';
-  const items = await (await fetch('/api/archive?filter=chat')).json();
-  if (!items.length) { $('#c-list').innerHTML = '<div class="hint">还没有对话总结</div>'; return; }
-  renderCards(items, $('#c-list'), () => $('#c-book').click());
+  loadChatBook();
 });
 
 async function refreshChatCount() {
@@ -1434,36 +1530,47 @@ async function refreshPracticeCount() {
 }
 
 /* ========== 悬停提示 ==========
-   用自己的浮层而不是原生 title：原生的延迟各浏览器不一致、样式也没法跟界面统一。
+   用事件委托而不是启动时遍历绑定：卡片、折叠线索这些是动态插入的，
+   一次性绑定拿不到它们。
+   自己的浮层而不是原生 title：原生延迟各浏览器不一致、样式也没法统一。
    1 秒延迟是刻意的 —— 太快会在鼠标路过时乱闪。 */
-let tipEl = null, tipTimer = null;
+let tipEl = null, tipTimer = null, tipFor = null;
 
 function hideTip() {
   clearTimeout(tipTimer);
+  tipFor = null;
   if (tipEl) { tipEl.remove(); tipEl = null; }
 }
 
 function showTip(el) {
-  hideTip();
+  if (tipEl) tipEl.remove();
   tipEl = document.createElement('div');
   tipEl.className = 'tip';
   tipEl.textContent = el.dataset.tip;
   document.body.appendChild(tipEl);
   const r = el.getBoundingClientRect();
   const w = tipEl.offsetWidth;
+  const h = tipEl.offsetHeight;
   tipEl.style.left = Math.max(8, Math.min(
     r.left + scrollX + r.width / 2 - w / 2, innerWidth - w - 8)) + 'px';
-  tipEl.style.top = r.bottom + scrollY + 8 + 'px';
+  // 下方放不下就翻到上方，免得贴在视口边缘被截掉
+  const below = r.bottom + scrollY + 8;
+  tipEl.style.top = (r.bottom + h + 16 > innerHeight ? r.top + scrollY - h - 8 : below) + 'px';
 }
 
-$$('[data-tip]').forEach((el) => {
-  el.addEventListener('mouseenter', () => {
-    clearTimeout(tipTimer);
-    tipTimer = setTimeout(() => showTip(el), 1000);
-  });
-  el.addEventListener('mouseleave', hideTip);
-  el.addEventListener('click', hideTip);
+document.addEventListener('mouseover', (e) => {
+  const el = e.target.closest && e.target.closest('[data-tip]');
+  if (!el || el === tipFor) return;
+  hideTip();
+  tipFor = el;
+  tipTimer = setTimeout(() => { if (tipFor === el) showTip(el); }, 1000);
 });
+document.addEventListener('mouseout', (e) => {
+  const el = e.target.closest && e.target.closest('[data-tip]');
+  if (el && el === tipFor) hideTip();
+});
+document.addEventListener('click', hideTip, true);
+window.addEventListener('scroll', hideTip, { passive: true });
 
 /* ========== 初始 ========== */
 fetch('/api/archive?filter=all').then((r) => r.json())

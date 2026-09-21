@@ -31,7 +31,7 @@
           <div class="wave" data-wave></div>
         </div>
         <div class="row" style="margin-top:12px">
-          <button class="pill acc" id="p-go">改一改</button>
+          <button class="pill acc" id="p-go" data-tip="把你写的句子改成地道说法，并朗读一遍">改一改</button>
           <span class="hint">⌘ + Enter 提交</span>
         </div>
       </div>
@@ -52,7 +52,7 @@
 
       <!-- ② 下一步是邀请；存档是并列的次要动作，有标签、位置固定 -->
       <div class="st2 row">
-        <button class="invite" id="p-why">想知道为什么这么改<span class="chev">⌄</span></button>
+        <button class="invite" id="p-why" data-tip="让模型逐点讲清改动的原因，之后可以继续追问">想知道为什么这么改<span class="chev">⌄</span></button>
         <button class="pill" id="p-save" style="margin-left:auto">存进档案</button>
       </div>
 
@@ -71,7 +71,7 @@
         </div>
         <!-- 保存整段讨论：固定在线索末尾，不再是每轮角上一个小图标 -->
         <div class="row" style="margin-top:14px">
-          <button class="pill acc big" id="p-save-note">总结这段讨论，存进记录</button>
+          <button class="pill acc big" id="p-save-note" data-tip="把上面整段讨论压成一条笔记存进这条记录 —— 追问过几轮就总结，不是只留最后一条回复">总结这段讨论，存进记录</button>
         </div>
         <!-- 存完把实际存进去的内容显示出来，让用户能当场确认总结对不对 -->
         <div id="p-saved"></div>
@@ -80,13 +80,13 @@
       <!-- 「换一句」从阶段②就要有：有些句子不需要深入问。
            以前它只在阶段④出现，不点「为什么这么改」就没有出路，是个死胡同。 -->
       <div class="st2up row" style="margin-top:14px">
-        <button class="invite subtle" id="p-again" style="margin-left:auto">换一句继续练<span class="chev">⌄</span></button>
+        <button class="invite subtle restart" id="p-again" style="margin-left:auto" data-tip="清掉当前这一轮，回到输入框重新开始">换一句继续练<span class="chev">↻</span></button>
       </div>
 
       <!-- 次级板块：跟单词页的「我的生词本」同一套 .section 规范。
            对应终端版练习循环里的 /doc。 -->
       <div class="section" id="p-section">
-        <button class="section-head" id="p-recent">
+        <button class="section-head" id="p-recent" data-tip="就地翻看你存过的练习记录，不用跳去档案页">
           <span class="section-title">最近的练习记录</span>
           <span class="section-count" id="p-count"></span>
           <span class="chev">⌄</span>
@@ -128,7 +128,7 @@
             <button class="mic-btn" data-mic="#w-add" data-lang="en" aria-label="语音输入（说英文）" title="语音输入（说英文）">🎙</button>
             <div class="wave" data-wave></div>
           </div>
-          <button class="pill acc hero-btn" id="w-go">查询</button>
+          <button class="pill acc hero-btn" id="w-go" data-tip="查这个词的音标、释义、搭配、用法提示和近义词辨析">查询</button>
         </div>
         <div class="st1 hint" style="margin-top:12px">查过的词可以存进生词本，之后能出题自测</div>
       </div>
@@ -152,7 +152,7 @@
               <button class="mic-btn" data-mic="#w-more" data-lang="zh" aria-label="语音输入（说中文）" title="语音输入（说中文）">🎙</button>
               <div class="wave" data-wave></div>
             </div>
-            <button class="pill acc" id="w-more-send">追问</button>
+            <button class="pill acc" id="w-more-send" data-tip="基于上面的解析继续问，只答你问的这一点">追问</button>
           </div>
           <div class="row" style="margin-top:14px">
             <button class="pill acc big" id="w-save-note">总结这个词，存进生词本</button>
@@ -165,7 +165,7 @@
 
       <!-- 次级板块：生词本 -->
       <div class="section" id="w-section">
-        <button class="section-head" id="w-book">
+        <button class="section-head" id="w-book" data-tip="你存过的词，可以翻看、追问、删除">
           <span class="section-title">我的生词本</span>
           <span class="section-count" id="w-count"></span>
           <span class="chev">⌄</span>
@@ -200,7 +200,7 @@
             <button class="mic-btn" data-mic="#s-input" data-lang="en" aria-label="语音输入（说英文）" title="语音输入（说英文）">🎙</button>
             <div class="wave" data-wave></div>
           </div>
-          <button class="pill acc hero-btn" id="s-go">分析</button>
+          <button class="pill acc hero-btn" id="s-go" data-tip="拆解句子结构：主干、从句、难点，必要时给同类句型举例">分析</button>
         </div>
         <div class="st1 hint" style="margin-top:12px">分析完可以追问，存成笔记后能回看、也能让模型找出你反复卡住的结构</div>
       </div>
@@ -218,11 +218,11 @@
               <button class="mic-btn" data-mic="#s-more" data-lang="zh" aria-label="语音输入（说中文）" title="语音输入（说中文）">🎙</button>
               <div class="wave" data-wave></div>
             </div>
-            <button class="pill acc" id="s-more-send">追问</button>
+            <button class="pill acc" id="s-more-send" data-tip="基于上面的分析继续问">追问</button>
           </div>
           <div class="row" style="margin-top:14px">
             <button class="pill acc big" id="s-save">总结成复习笔记</button>
-            <button class="invite subtle" id="s-next" style="margin-left:auto">换一句<span class="chev">⌄</span></button>
+            <button class="invite subtle restart" id="s-next" style="margin-left:auto" data-tip="清掉当前这一轮，回到输入框重新开始">换一句<span class="chev">↻</span></button>
           </div>
           <div id="s-saved"></div>
         </div>
@@ -230,17 +230,26 @@
       </div>
 
       <div class="section" id="s-section">
-        <button class="section-head" id="s-book">
+        <button class="section-head" id="s-book" data-tip="你存过的句型笔记，可以翻看和删除">
           <span class="section-title">过往笔记</span>
           <span class="section-count" id="s-count"></span>
           <span class="chev">⌄</span>
         </button>
         <div class="section-body">
           <div class="row" style="margin-bottom:12px">
-            <button class="pill" id="s-review">找出我反复卡住的结构</button>
+            <button class="pill" id="s-review" data-tip="把你过往的笔记放在一起，找出你反复卡住的那类结构">找出我反复卡住的结构</button>
           </div>
           <div id="s-report"></div>
-          <div id="s-list"></div>
+          <div class="pager" id="s-pager" hidden>
+            <button class="pager-nav" id="s-prev" aria-label="上一条">‹</button>
+            <div class="cover" id="s-deck"></div>
+            <button class="pager-nav" id="s-next-card" aria-label="下一条">›</button>
+          </div>
+          <div class="pager-foot" id="s-foot" hidden>
+            <span class="deck-pos" id="s-pos"></span>
+            <div class="dots" id="s-dots"></div>
+            <span class="hint">点两侧卡片切换 · ‹ › 或 ← → 翻页</span>
+          </div>
         </div>
       </div>
 
@@ -265,7 +274,7 @@
             <button class="mic-btn" data-mic="#c-input" data-lang="zh" aria-label="语音输入（说中文）" title="语音输入（说中文）">🎙</button>
             <div class="wave" data-wave></div>
           </div>
-          <button class="pill acc hero-btn" id="c-send">发送</button>
+          <button class="pill acc hero-btn" id="c-send" data-tip="发送提问。快速档用本地模型，深度档用云端模型">发送</button>
         </div>
       </div>
 
@@ -273,7 +282,7 @@
       <div class="c-ready">
         <div class="row" style="margin-top:6px">
           <button class="pill acc big" id="c-save">总结这次对话，存进档案</button>
-          <button class="invite subtle" id="c-clear" style="margin-left:auto">清空重开<span class="chev">⌄</span></button>
+          <button class="invite subtle restart" id="c-clear" style="margin-left:auto" data-tip="清掉当前这一轮，回到输入框重新开始">清空重开<span class="chev">↻</span></button>
         </div>
         <div id="c-saved"></div>
       </div>
@@ -283,12 +292,23 @@
       </div>
 
       <div class="section" id="c-section">
-        <button class="section-head" id="c-book">
+        <button class="section-head" id="c-book" data-tip="你存过的对话总结，可以翻看和删除">
           <span class="section-title">过往对话总结</span>
           <span class="section-count" id="c-count"></span>
           <span class="chev">⌄</span>
         </button>
-        <div class="section-body"><div id="c-list"></div></div>
+        <div class="section-body">
+          <div class="pager" id="c-pager" hidden>
+            <button class="pager-nav" id="c-prev" aria-label="上一条">‹</button>
+            <div class="cover" id="c-deck"></div>
+            <button class="pager-nav" id="c-next-card" aria-label="下一条">›</button>
+          </div>
+          <div class="pager-foot" id="c-foot" hidden>
+            <span class="deck-pos" id="c-pos"></span>
+            <div class="dots" id="c-dots"></div>
+            <span class="hint">点两侧卡片切换 · ‹ › 或 ← → 翻页</span>
+          </div>
+        </div>
       </div>
 
     </div>
@@ -302,7 +322,7 @@
       <button class="pill" data-filter="word">单词</button>
       <button class="pill" data-filter="parse">句型</button>
       <button class="pill" data-filter="chat">对话</button>
-      <button class="pill ghost" id="a-analyze" style="margin-left:auto">分析我的语法习惯</button>
+      <button class="pill ghost" id="a-analyze" data-tip="读你最近 30 条造句，找出反复出现的句式和用词习惯" style="margin-left:auto">分析我的语法习惯</button>
     </div>
     <div id="a-report"></div>
     <div id="a-list"></div>
