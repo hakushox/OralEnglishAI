@@ -683,9 +683,11 @@ async function loadWordBook() {
 
   /* 按「离中心的距离」摆位：中间原尺寸，两侧逐级缩小、压到后面、淡出。
      容器高度跟着当前那张走（展开详情时会变高），所以每次摆位后重新量一次。 */
-  function layout() {
+  /* center 可以是小数 —— 滑动过程中按连续位置摆位，手感才跟得上；
+     停手后再吸附到整数。 */
+  function layout(center = deckIndex) {
     slides.forEach((sl, i) => {
-      const d = i - deckIndex;
+      const d = i - center;
       const ad = Math.abs(d);
       // 衰减要温和：参考的 coverflow 里侧卡是清楚可见的，不是快消失的影子
       const scale = Math.max(0.78, 1 - ad * 0.1);
@@ -694,10 +696,10 @@ async function loadWordBook() {
       sl.style.opacity = ad > 2 ? 0 : String(Math.max(0, 1 - ad * 0.22));
       sl.style.zIndex = String(50 - ad);
       sl.style.pointerEvents = ad > 2 ? 'none' : 'auto';
-      sl.classList.toggle('active', d === 0);
-      if (d !== 0) sl.classList.remove('up');  // 翻走的那张自动收起
+      sl.classList.toggle('active', Math.abs(d) < 0.5);
+      if (Math.abs(d) >= 0.5) sl.classList.remove('up');  // 翻走的那张自动收起
     });
-    $('#w-pos').textContent = `${deckIndex + 1} / ${list.length}`;
+    $('#w-pos').textContent = `${Math.round(center) + 1} / ${list.length}`;
     $$('i', dotBox).forEach((d, k) => d.classList.toggle('on', k === deckIndex));
     $('#w-prev').disabled = deckIndex <= 0;
     $('#w-next-card').disabled = deckIndex >= list.length - 1;
@@ -713,6 +715,8 @@ async function loadWordBook() {
 
   const go = (k) => {
     deckIndex = Math.max(0, Math.min(list.length - 1, k));
+    pos = deckIndex;              // 跟滑动共用同一个位置，否则按完按钮再滑会跳回去
+    slides.forEach((sl) => { sl.style.transition = ''; });
     layout();
   };
 
@@ -755,23 +759,40 @@ async function loadWordBook() {
   $('#w-next-card').onclick = nav(() => go(deckIndex + 1));
   $$('i', dotBox).forEach((d, k) => d.addEventListener('click', nav(() => go(k))));
 
-  /* 翻页手势：只吃横向滚动，而且**一次手势只翻一张**。
-     触控板一次物理滑动会连发几十个 wheel 事件、累计几百 px，
-     所以不能用"累积到阈值就翻 + 冷却"那种写法 —— 冷却一过又会再翻，直接跳过好几张。
-     改成：翻过一次就锁住，靠事件间隔（140ms 没有新事件）判断手势结束才解锁。 */
-  let wheelAcc = 0, wheelFired = false, wheelIdle = null;
+  /* 翻页手势：把横向位移当成连续的滚动位置，停手后吸附到最近一张。
+
+     之前两版都错在「锁 + 解锁」的思路上：
+       第一版 固定 260ms 冷却 → 惯性尾巴在冷却后又攒够阈值，一次手势飞过好几张
+       第二版 靠 140ms 事件间隔判断手势结束 → 触控板/Magic Mouse 松手后
+              还会持续发惯性事件，那个间隔根本等不到，锁一直不放，
+              必须把鼠标移出容器才能再滑
+     根本问题是「一次手势」在 wheel 事件流里没有可靠的边界。
+     所以不要去划分手势 —— 像原生滚动那样按位移连续响应，惯性自然变成滚动的一部分。 */
+  // 横向滑多少像素算一张。220 是实测标定的：
+  //   轻扫（约 190px）→ 0.86 → 吸附成 1 张
+  //   重扫（约 520px）→ 2.4  → 吸附成 2 张
+  //   不停顿连滑两次（约 380px）→ 1.7 → 吸附成 2 张
+  // 定成 300 时最后一种只走 1 张，感觉像丢了一次滑动。
+  const PX_PER_CARD = 220;
+  let pos = deckIndex;            // 连续位置（单位：卡片，可为小数）
+  let snapTimer = null;
+
   deck.onwheel = (e) => {
     if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;   // 纵向滚动交给页面
     e.preventDefault();
-    clearTimeout(wheelIdle);
-    wheelIdle = setTimeout(() => { wheelAcc = 0; wheelFired = false; }, 140);
-    if (wheelFired) return;
-    wheelAcc += e.deltaX;
-    if (Math.abs(wheelAcc) > 28) {
-      go(deckIndex + Math.sign(wheelAcc));
-      wheelFired = true;
-      wheelAcc = 0;
-    }
+    // 单个事件的贡献要设上限：某些设备偶尔会发一个几百 px 的巨大 delta
+    const step = Math.max(-60, Math.min(60, e.deltaX)) / PX_PER_CARD;
+    pos = Math.max(0, Math.min(list.length - 1, pos + step));
+    slides.forEach((sl) => { sl.style.transition = 'none'; });   // 跟手阶段不要过渡
+    layout(pos);
+
+    clearTimeout(snapTimer);
+    snapTimer = setTimeout(() => {      // 输入停了，吸附到最近一张
+      slides.forEach((sl) => { sl.style.transition = ''; });
+      deckIndex = Math.round(pos);
+      pos = deckIndex;
+      layout();
+    }, 90);
   };
 
   // 键盘左右翻页：只在单词页、抽屉开着、焦点不在输入框时生效
