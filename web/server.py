@@ -314,6 +314,29 @@ def word_followup(payload: dict = Body(...)):
     return ndjson(engine.stream_answer(messages, temperature=0.3), _remember_word)
 
 
+@app.post('/api/word/open')
+async def word_open(payload: dict = Body(...)):
+    """打开生词本里已存的词。
+
+    **必须重置服务端的 _word_thread**，把这个词和它的笔记塞进去当上下文。
+    不这么做的话：查了 A 词再打开已存的 B 词，追问会在 A 的上下文里作答，
+    点「总结」更糟 —— 会把 A 的讨论总结后存到 B 的名下。
+    """
+    global _word_thread
+    word = (payload.get('word') or '').strip()
+    for w in store.load_words():
+        if w.get('word', '').lower() == word.lower():
+            _word_thread = [
+                {'role': 'system', 'content': review.WORD_PARSE_SYSTEM_PROMPT},
+                {'role': 'user', 'content': w.get('word', '')},
+                {'role': 'assistant', 'content': w.get('usage', '')},
+            ]
+            return {'ok': True, **w,
+                    'stars': w.get('stars') or store.extract_stars(w.get('usage', ''))}
+    _word_thread = []
+    return {'ok': False, 'msg': '生词本里没有这个词'}
+
+
 @app.post('/api/word/save')
 async def word_save(payload: dict = Body(...)):
     """把当前解析原样存进生词本（没追问过时用这个）"""

@@ -528,6 +528,7 @@ async function analyzeWord(word) {
   $('#w-thread').innerHTML = '';
   $('#w-saved').innerHTML = '';
   $('.wcard').classList.remove('ready');
+  $('.wcard').classList.remove('savable');
   $('#w-next').classList.remove('pulse');
   $('#w-save-note').textContent = '总结这个词，存进生词本';
   $('#w-save-note').disabled = false;
@@ -541,6 +542,7 @@ async function analyzeWord(word) {
   const st = (wordState.body.match(/★+☆*/) || [''])[0];   // 星级拎到卡头上，别埋在正文里
   $('#w-stars').textContent = st;
   $('.wcard').classList.add('ready');
+  $('.wcard').classList.add('savable');   // 新解析出来的内容还没存过
 }
 
 function wordMsg(text) {
@@ -565,8 +567,11 @@ $('#w-next').addEventListener('click', () => {
   $('#w-add').focus();
 });
 
-bindSend('#w-more', '#w-more-send',
-  (question) => streamRound(question, '/api/word/followup', { question, word: wordState.word }));
+bindSend('#w-more', '#w-more-send', async (question) => {
+  await streamRound(question, '/api/word/followup', { question, word: wordState.word });
+  // 追问出了新东西，这才值得存 —— 没追问过的已存笔记不该出现「总结」按钮
+  $('.wcard').classList.add('savable');
+});
 
 $('#w-save-note').addEventListener('click', async (e) => {
   const btn = e.target;
@@ -662,7 +667,7 @@ async function loadWordBook() {
           <div class="wbig-detail-inner">
             <div class="card md">${mdToHtml(w.usage || '（这个词还没有笔记）')}</div>
             <div class="row" style="margin-top:12px">
-              <button class="pill acc" data-act="review">复习并追问</button>
+              <button class="pill acc" data-act="review">追问这个词</button>
               <button class="pill" data-act="test">出题测一测</button>
               <button class="pill" data-act="del"
                       style="margin-left:auto;background:#5a2523;color:#f0c9c6">删除</button>
@@ -808,7 +813,9 @@ $('#w-book').addEventListener('click', (e) => {
 
 /* 复习：把已存的笔记放到主区，可以接着追问 */
 async function showSavedWord(word) {
-  const d = await (await fetch('/api/words/' + encodeURIComponent(word))).json();
+  // 走 POST /api/word/open：它会把这个词的笔记塞进服务端 thread 当上下文。
+  // 不换上下文的话，追问会在上一个查过的词的语境里作答。
+  const d = await post('/api/word/open', { word });
   if (!d.ok) { wordMsg(d.msg || '读取失败'); return; }
   wordState = { word: d.word, body: d.usage || '' };
   wordSetStage(2);
@@ -822,7 +829,10 @@ async function showSavedWord(word) {
   // 已存的笔记也放进线索里当第一条，这样追问时它会自动收起
   const round = addRound('已存的笔记', '#w-thread');
   $('.md', round).innerHTML = mdToHtml(d.usage || '');
+  // 只给追问，不给「总结」—— 这条笔记已经在生词本里了，没有新东西可存。
+  // 等真的追问出新内容，savable 才加上（见 bindSend('#w-more') 那里）
   $('.wcard').classList.add('ready');
+  $('.wcard').classList.remove('savable');
   $('#w-save-note').textContent = '总结这个词，存进生词本';
   $('#w-save-note').disabled = false;
   closeWordBook();

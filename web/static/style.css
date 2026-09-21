@@ -344,9 +344,14 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 .wcard-head .pill { align-self: center; }
 .wcard-head .pill.ghost { margin-left: auto; }
 
-/* 追问和保存等解析流完才出现，跟练习页一个逻辑 */
+/* 追问等解析流完才出现，跟练习页一个逻辑 */
 .w-ready { display: none; }
 .wcard.ready .w-ready { display: block; animation: slideup 0.45s var(--ease) both; }
+
+/* 「总结这个词」只在有未存内容时出现：
+   新查的解析算未存；从生词本打开的已存笔记不算，得真追问出新东西才算。 */
+#w-save-note { display: none; }
+.wcard.savable #w-save-note { display: inline-flex; animation: slideup 0.4s var(--ease) both; }
 
 .wbook { margin-top: 30px; padding-top: 6px; border-top: 0.5px solid var(--border); }
 #w-count { color: var(--text-5); }
