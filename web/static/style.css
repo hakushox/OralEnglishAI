@@ -379,6 +379,37 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
   padding-top: 9px; border-top: 0.5px solid var(--border);
 }
 
+/* 正文默认收起约两行，点整张卡片展开。
+   用 max-height 而不是 -webkit-line-clamp —— 正文是渲染后的 markdown，
+   里面有 <p>/<ul>/<table> 这些块级元素，line-clamp 对它们不生效。 */
+.arc-body {
+  font-size: 13px; color: var(--text-3); line-height: 1.65;
+  margin-top: 8px; padding-top: 8px; border-top: 0.5px solid var(--border);
+  max-height: 44px; overflow: hidden;
+  transition: max-height 0.35s var(--ease);
+}
+.arc-card.open .arc-body { max-height: 2000px; }
+.arc-card.expandable { cursor: pointer; transition: background 0.15s var(--ease); }
+.arc-card.expandable:hover { background: var(--surface-2); }
+.arc-head .chev {
+  margin-left: auto; color: var(--text-5); font-size: 12px;
+  transition: transform 0.25s var(--ease);
+}
+.arc-card.open .arc-head .chev { transform: rotate(180deg); }
+.arc-body table { font-size: 12px; }
+
+/* ============ 悬停提示 ============ */
+.tip {
+  position: absolute; z-index: 60; max-width: 280px;
+  background: var(--surface-2); border: 0.5px solid var(--border);
+  border-radius: 8px; padding: 8px 11px;
+  font-size: 12px; line-height: 1.6; color: var(--text-2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  animation: tipIn 0.16s var(--ease);
+}
+@keyframes tipIn { from { opacity: 0; transform: translateY(-4px); } }
+
 /* ============ 选词浮层 ============ */
 .pop {
   position: absolute; z-index: 50; width: 268px;

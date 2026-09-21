@@ -101,6 +101,11 @@ def _first_line(text, limit=60):
     return line[:limit]
 
 
+# 正文一律发全文，截断交给前端（CSS 收起 + 点击展开）。
+# 之前在这里截成 90/120 字，前端连全文都拿不到，用户点开也只有节选。
+# 数据量很小（几 KB），没有分页的必要。
+
+
 def archive_items(kind='all'):
     """把四类记录合成前端要的卡片列表。
 
@@ -118,7 +123,7 @@ def archive_items(kind='all'):
             'when': f'第 {len(records) - idx + 1} 条',
             'old': r.get('draft') or '',
             'title': r.get('revised') or '',
-            'note': _first_line(note, 120) if note else '',
+            'note': note or '',
         })
 
     timed = []
@@ -130,22 +135,23 @@ def archive_items(kind='all'):
             'kind': 'word', 'kindLabel': '单词',
             'when': w.get('time', ''),
             'title': w.get('word', ''),
-            'body': _first_line(detail, 90),
+            'body': detail,
         })
 
     for e in _load_md_entries(PARSE_SUMMARY_LOG):
+        head = _first_line(e['body'])
         timed.append({
             'kind': 'parse', 'kindLabel': '句型',
             'when': e['when'],
-            'title': _first_line(e['body']),
-            'body': _first_line(e['body'][len(_first_line(e['body'])):], 90),
+            'title': head,
+            'body': e['body'][len(head):].lstrip(),
         })
 
     for e in _load_md_entries(CHAT_SUMMARY_LOG):
         timed.append({
             'kind': 'chat', 'kindLabel': '对话',
             'when': e['when'],
-            'body': _first_line(e['body'], 120),
+            'body': e['body'],
         })
 
     timed.sort(key=lambda x: x['when'], reverse=True)   # 时间戳是 'YYYY-MM-DD HH:MM'，字典序即时间序

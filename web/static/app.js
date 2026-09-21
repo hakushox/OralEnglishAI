@@ -385,14 +385,9 @@ $('#p-recent').addEventListener('click', async (e) => {
   box.innerHTML = '<div class="hint">读取中…</div>';
   const items = await (await fetch('/api/archive?filter=draft')).json();
   if (!items.length) { box.innerHTML = '<div class="hint">还没有记录</div>'; return; }
-  box.innerHTML = items.slice(0, 3).map((it, i) => `
-    <div class="arc-card draft-kind slide-up" style="animation-delay:${i * 60}ms">
-      <div class="arc-head"><span class="kind">${it.kindLabel}</span><span class="when">${it.when}</span></div>
-      ${it.old ? `<div class="arc-old en">${esc(it.old)}</div>` : ''}
-      <div class="arc-new en">${esc(it.title || '')}</div>
-      ${it.note ? `<div class="arc-note">${esc(it.note)}</div>` : ''}
-    </div>`).join('') +
-    `<div class="hint" style="margin-top:6px">以上是最近 3 条，更多在「档案」页</div>`;
+  renderCards(items.slice(0, 3), box);
+  box.insertAdjacentHTML('beforeend',
+    '<div class="hint" style="margin-top:6px">以上是最近 3 条，更多在「档案」页</div>');
 });
 
 /* 输入框统一走这个：键盘和按钮两条路都要有，不能只留快捷键。
@@ -598,18 +593,39 @@ bindSend('#c-input', '#c-send', async (msg) => {
   box.scrollIntoView({ block: 'end', behavior: 'smooth' });
 });
 
+/* ==================== 档案卡片（练习页和档案页共用） ====================
+   正文默认收起两行，够长的卡片整张可点展开。
+   后端发的是全文，截断只发生在 CSS 层 —— 之前后端就截好了，
+   前端连全文都拿不到，点开也只有节选。 */
+function renderCards(items, box) {
+  box.innerHTML = items.map((it, i) => {
+    const extra = it.note || it.body || '';
+    const long = extra.length > 80;
+    return `
+    <div class="arc-card ${it.kind === 'draft' ? 'draft-kind' : ''}${long ? ' expandable' : ''}"
+         style="animation-delay:${i * 45}ms"${long ? ' data-exp' : ''}
+         ${long ? 'title="点击展开全文"' : ''}>
+      <div class="arc-head">
+        <span class="kind">${it.kindLabel}</span><span class="when">${it.when}</span>
+        ${long ? '<span class="chev">⌄</span>' : ''}
+      </div>
+      ${it.old ? `<div class="arc-old en">${esc(it.old)}</div>` : ''}
+      ${it.title ? `<div class="arc-new en">${esc(it.title)}</div>` : ''}
+      ${extra ? `<div class="arc-body">${mdToHtml(extra)}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  $$('[data-exp]', box).forEach((card) => card.addEventListener('click', (e) => {
+    if (e.target.closest('a')) return;               // 卡片里的链接照常跳转
+    card.classList.toggle('open');
+  }));
+}
+
 /* ==================== 档案 ==================== */
 async function loadArchive(filter) {
   const items = await (await fetch('/api/archive?filter=' + filter)).json();
   if (filter === 'all') $('#arc-count').textContent = items.length;  // 导航上是总数，不跟着筛选变
-  $('#a-list').innerHTML = items.map((it, i) => `
-    <div class="arc-card ${it.kind === 'draft' ? 'draft-kind' : ''}" style="animation-delay:${i * 40}ms">
-      <div class="arc-head"><span class="kind">${it.kindLabel}</span><span class="when">${it.when}</span></div>
-      ${it.old ? `<div class="arc-old en">${esc(it.old)}</div>` : ''}
-      ${it.title ? `<div class="arc-new en">${esc(it.title)}</div>` : ''}
-      ${it.body ? `<div style="font-size:13px;color:var(--text-3);line-height:1.65;margin-top:5px">${esc(it.body)}</div>` : ''}
-      ${it.note ? `<div class="arc-note">${esc(it.note)}</div>` : ''}
-    </div>`).join('');
+  renderCards(items, $('#a-list'));
 }
 $('#a-analyze').addEventListener('click', async (e) => {
   const box = $('#a-report');
@@ -673,6 +689,38 @@ document.addEventListener('mouseup', async (e) => {
     ev.target.textContent = '已加入';
     ev.target.disabled = true;
   });
+});
+
+/* ========== 悬停提示 ==========
+   用自己的浮层而不是原生 title：原生的延迟各浏览器不一致、样式也没法跟界面统一。
+   1 秒延迟是刻意的 —— 太快会在鼠标路过时乱闪。 */
+let tipEl = null, tipTimer = null;
+
+function hideTip() {
+  clearTimeout(tipTimer);
+  if (tipEl) { tipEl.remove(); tipEl = null; }
+}
+
+function showTip(el) {
+  hideTip();
+  tipEl = document.createElement('div');
+  tipEl.className = 'tip';
+  tipEl.textContent = el.dataset.tip;
+  document.body.appendChild(tipEl);
+  const r = el.getBoundingClientRect();
+  const w = tipEl.offsetWidth;
+  tipEl.style.left = Math.max(8, Math.min(
+    r.left + scrollX + r.width / 2 - w / 2, innerWidth - w - 8)) + 'px';
+  tipEl.style.top = r.bottom + scrollY + 8 + 'px';
+}
+
+$$('[data-tip]').forEach((el) => {
+  el.addEventListener('mouseenter', () => {
+    clearTimeout(tipTimer);
+    tipTimer = setTimeout(() => showTip(el), 1000);
+  });
+  el.addEventListener('mouseleave', hideTip);
+  el.addEventListener('click', hideTip);
 });
 
 /* ========== 初始 ========== */
