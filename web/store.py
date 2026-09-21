@@ -76,6 +76,27 @@ def load_words():
     return [i for i in data if isinstance(i, dict)]
 
 
+def save_word(word, usage):
+    """存/覆盖一个词的笔记。
+
+    不能用 save_path.save_word_summary() —— 它发现重名时会弹交互式 prompt()
+    问要不要覆盖，在服务进程里会把请求永久挂住。这里直接覆盖，
+    界面上会显示存了什么，用户能自己判断。
+    """
+    import datetime
+    words = load_words()
+    stamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+    for item in words:
+        if item.get('word', '').lower() == word.lower():
+            item['usage'] = usage
+            item['time'] = stamp
+            _write_words(words)
+            return 'updated'
+    words.append({'word': word, 'usage': usage, 'time': stamp})
+    _write_words(words)
+    return 'created'
+
+
 # ---------- markdown 日志 ----------
 
 def _load_md_entries(path):

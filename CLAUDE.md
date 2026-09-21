@@ -32,15 +32,15 @@
 - **记录可左滑删除，带撤销**：四类记录都支持（`store.delete_item(kind, index)`），
   删掉的内容在内存里留一份，`restore_last()` 插回**原位**而不是追加到末尾。
   不可逆操作一律给撤销，不要弹确认框 —— 确认框会让人养成条件反射点确定。
-- **单词页排版已重做**：查词框 + 单词卡是主角，生词本是默认收起的抽屉，
-  进来不自动选词。生词本列表和"读已存笔记"已是真实数据；
-  **查词解析和追问仍是 MOCK**（`/api/word/analyze`、`/api/word/followup`）。
-  注意单词笔记在存储里是**一整段 markdown**（见 `WORDS_SUMMARY_LOG` 的 `usage` 字段），
+- **单词模块已接真**：查词（`review.WORD_PARSE_SYSTEM_PROMPT`，云端优先）、追问、
+  存进生词本（追问过就先用 `REVIEW_WORDS_SYSTEM_PROMPT` 总结）。
+  排版上查词框 + 单词卡是主角，生词本是默认收起的抽屉，进来不自动选词。
+  注意单词笔记在存储里是**一整段 markdown**（`WORDS_SUMMARY_LOG` 的 `usage` 字段），
   不是拆好的字段，前端按 markdown 渲染，别想着拆成音标/例句/搭配。
-- **下一步**：单词页接真（`review.WORD_PARSE_SYSTEM_PROMPT` + `REVIEW_WORDS_SYSTEM_PROMPT`），
-  然后是出题练一练（`QUESTION_GEN` / `GRADE_ANSWER` / `PRACTICE_CONCLUSION` 三个 prompt
-  + `save_path.update_word_proficiency` 回写熟练度）。
-  再之后：长难句 / 随便问接真，浏览器录音上传 + faster-whisper 转写。
+- **下一步**：单词的「出题练一练」（`QUESTION_GEN` / `GRADE_ANSWER` /
+  `PRACTICE_CONCLUSION` 三个 prompt + `save_path.update_word_proficiency` 回写熟练度，
+  后者是纯读写可以直接 import）。再之后：长难句 / 随便问接真、
+  浏览器录音上传 + faster-whisper 转写。
 - **已知不足**：`SAVE_NOTE_SUMMARY_PROMPT` 限制 80 字，多话题讨论会丢内容
   （比如语法点 + 词义辨析同时聊，总结可能只留后者）。要改得在 `web/prompts.py`
   里另写一份更长的总结 prompt，`review.py` 那个不能动。

@@ -1,8 +1,8 @@
 """
 SpeakNatural 浏览器版后端。
 
-已接真实逻辑：练习主流程（纠正 / 为什么这么改 / 存档）、语音合成、档案页。
-仍是假数据（标了 MOCK）：单词、长难句、随便问、查词浮层、语音转写。
+已接真实逻辑：练习主流程、语音合成、档案页（含分析语法习惯 / 删除）、单词模块。
+仍是假数据（标了 MOCK）：长难句、随便问、选词浮层、语音转写、单词的「出题练一练」。
 
 流式接口统一按行返回 JSON（NDJSON），事件类型见 web/engine.py 的说明。
 """
@@ -260,26 +260,83 @@ async def word_note(word: str):
     return {'ok': False, 'msg': '生词本里没有这个词'}
 
 
-@app.post('/api/word/analyze')
-async def word_analyze(payload: dict = Body(...)):
-    """MOCK：真实版本走 review.WORD_PARSE_SYSTEM_PROMPT。
+# 单词解析也是多轮的（查完可以追问），跟 _why_thread 一个道理：
+# 本地单用户程序，一个全局 thread 就够，不做 session 管理。
+_word_thread = []
 
-    注意返回的是**一整段 markdown**，跟 review.py 那个 prompt 的输出格式一致
-    （六段式：音标词性 / 释义例句 / 常见搭配 / 用法提示 / 记忆逻辑 / 词汇拓展），
-    不是拆好的字段 —— 前端按 markdown 渲染，接真时只换这个函数体。
+
+def _remember_word(full):
+    if full:
+        _word_thread.append({'role': 'assistant', 'content': full})
+
+
+@app.post('/api/word/analyze')
+def word_analyze(payload: dict = Body(...)):
+    """查词解析。复用 review.WORD_PARSE_SYSTEM_PROMPT，输出是一整段六段式 markdown。
+
+    云端优先（走 stream_answer）—— 这活要词典知识和推理，
+    本地 4B 给不出可靠的音标、搭配和同义词辨析。
     """
+    global _word_thread
     word = (payload.get('word') or '').strip()
-    text = MOCK_WORD_MD.get(word.lower(), MOCK_WORD_MD_FALLBACK.format(word=word))
-    return await mock_ndjson(list(text), delay=0.006)
+    if not word:
+        return ndjson(iter([{'error': '（没有收到要查的词）'}]))
+    _word_thread = [
+        {'role': 'system', 'content': review.WORD_PARSE_SYSTEM_PROMPT},
+        {'role': 'user', 'content': word},
+    ]
+    return ndjson(engine.stream_answer(_word_thread, temperature=0.3), _remember_word)
 
 
 @app.post('/api/word/followup')
-async def word_followup(payload: dict = Body(...)):
-    """MOCK：真实版本同样走 WORD_PARSE_SYSTEM_PROMPT + FOLLOWUP_GUARD"""
-    q = (payload.get('question') or '').strip()
-    text = f'（占位回答）关于"{q}"：接真实模型后这里会基于上面的解析继续回答，' \
-           '并且会带上 FOLLOWUP_GUARD，避免把六段式分析重跑一遍。'
-    return await mock_ndjson(list(text), delay=0.012)
+def word_followup(payload: dict = Body(...)):
+    question = (payload.get('question') or '').strip()
+    if not question:
+        return ndjson(iter([{'error': '（没有收到问题）'}]))
+    if not _word_thread:
+        return ndjson(iter([{'error': '（先查一个词）'}]))
+    # 跟练习页同样的处理：thread 里存原话，发给模型的那份才带约束，
+    # 否则约束会污染上下文，也会被"总结存生词本"当成用户说的话
+    _word_thread.append({'role': 'user', 'content': question})
+    messages = _word_thread[:-1] + [
+        {'role': 'user', 'content': question + prompts.FOLLOWUP_GUARD}
+    ]
+    return ndjson(engine.stream_answer(messages, temperature=0.3), _remember_word)
+
+
+@app.post('/api/word/save')
+async def word_save(payload: dict = Body(...)):
+    """把当前解析原样存进生词本（没追问过时用这个）"""
+    word = (payload.get('word') or '').strip()
+    usage = (payload.get('usage') or '').strip()
+    if not word or not usage:
+        return {'ok': False, 'msg': '没有可保存的内容'}
+    action = store.save_word(word, usage)
+    return {'ok': True, 'action': action, 'note': usage}
+
+
+@app.post('/api/word/save-note')
+async def word_save_note(payload: dict = Body(...)):
+    """追问过之后存：先用 REVIEW_WORDS_SYSTEM_PROMPT 把整段讨论总结成笔记。
+
+    跟练习页一样，只要追问过就总结 —— 不然存进去的只是最后一条回复，
+    前面问出来的东西全丢了。
+    """
+    word = (payload.get('word') or '').strip()
+    answers = [m['content'] for m in _word_thread if m['role'] == 'assistant']
+    if not word or not answers:
+        return {'ok': False, 'msg': '没有可保存的内容'}
+
+    if len(answers) > 1:
+        note = engine.collect(engine.stream_answer(
+            _word_thread + [{'role': 'user', 'content': review.REVIEW_WORDS_SYSTEM_PROMPT}],
+            temperature=0.2))
+        note = note or answers[-1]
+    else:
+        note = answers[-1]
+
+    action = store.save_word(word, note)
+    return {'ok': True, 'action': action, 'summarized': len(answers) > 1, 'note': note}
 
 
 @app.post('/api/parse')
@@ -328,40 +385,6 @@ async def lookup(word: str):
         'def': '（占位释义。接真实模型后，这里用本地模型一句话解释。）',
     })
 
-
-MOCK_WORD_MD = {
-    'subtle': """1. **单词**：subtle */ˈsʌt.əl/* adj. — 口语书面都常用。高级程度 ★★★★☆
-
-2. **释义**
-- 不易察觉的、微妙的 — *so slight as to be difficult to notice*
-  例：There's a **subtle** difference between the two.
-- （手法）巧妙的、不直接的 — *achieved in a clever way*
-  例：She gave me a **subtle** hint that it was time to leave.
-
-3. **常见搭配**
-| 搭配 | 说明 |
-|---|---|
-| subtle difference | 细微差别，最高频 |
-| subtle hint | 含蓄的暗示 |
-| subtle change | 不明显的变化 |
-
-4. **用法提示**：只作形容词；注意 **b 不发音**，读 /ˈsʌt.əl/，副词是 subtly。
-
-5. **核心记忆逻辑**：形容"存在但要留意才能发现"的东西。想强调"小"用 small，
-想强调"不容易被发现"才用 subtle。
-
-6. **词汇拓展**：slight 只说程度小；subtle 强调难以察觉。
-delicate 偏"精致易碎"，不能互换。""",
-}
-
-MOCK_WORD_MD_FALLBACK = """1. **单词**：{word}
-
-（这是占位内容。接真实模型后，这里会是 `review.WORD_PARSE_SYSTEM_PROMPT`
-输出的六段式解析：音标词性、释义例句、常见搭配、用法提示、记忆逻辑、词汇拓展。）
-
-2. **释义**：待解析
-3. **常见搭配**：待解析
-4. **用法提示**：待解析"""
 
 MOCK_LOOKUP = {
     'subtle': {'word': 'subtle', 'ipa': '/ˈsʌtl/', 'def': '不易察觉的、微妙的。b 不发音。'},

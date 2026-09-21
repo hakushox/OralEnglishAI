@@ -561,9 +561,19 @@ $('#w-cam').addEventListener('click', () => window.open(
   'https://dictionary.cambridge.org/dictionary/english-chinese-simplified/' +
   encodeURIComponent(wordState.word), '_blank'));
 
-$('#w-save').addEventListener('click', (e) => {
+$('#w-save').addEventListener('click', async (e) => {
   if (e.target.textContent === '重新解析') { analyzeWord(wordState.word); return; }
-  wordMsg('存进生词本 —— 接真实后端后生效（现在是 MOCK）');
+  const btn = e.target;
+  btn.disabled = true;
+  const r = await post('/api/word/save',
+    { word: wordState.word, usage: wordState.body });
+  if (r.ok) {
+    btn.textContent = r.action === 'updated' ? '✓ 已更新' : '✓ 已存入';
+    refreshWordCount();
+  } else {
+    btn.disabled = false;
+    wordMsg(r.msg || '保存失败');
+  }
 });
 
 $('#w-clear').addEventListener('click', () => {
@@ -587,8 +597,29 @@ async function askWord(question) {
 }
 bindSend('#w-more', '#w-more-send', askWord);
 
-$('#w-save-note').addEventListener('click', () => {
-  wordMsg('总结存进生词本 —— 接真实后端后生效（现在是 MOCK）');
+$('#w-save-note').addEventListener('click', async (e) => {
+  const btn = e.target;
+  const label = btn.textContent;
+  btn.textContent = '正在总结…';
+  btn.disabled = true;
+  const r = await post('/api/word/save-note', { word: wordState.word });
+  if (!r.ok) {
+    btn.textContent = label;
+    btn.disabled = false;
+    wordMsg(r.msg || '保存失败');
+    return;
+  }
+  btn.textContent = r.summarized ? '✓ 已总结并存入生词本' : '✓ 已存入生词本';
+  // 把实际存进去的内容显示出来，别让用户存了自己没读过的东西
+  $('#w-saved').innerHTML =
+    `<div class="card slide-up" style="margin-top:12px">
+       <div class="label acc">${r.summarized ? '存进生词本的总结' : '存进生词本的内容'}</div>
+       <div class="md"></div>
+     </div>`;
+  $('#w-saved .md').innerHTML = mdToHtml(r.note || '');
+  refreshWordCount();
+  $('#w-list').innerHTML = '';                 // 生词本变了，下次展开重新取
+  $('#w-book').classList.remove('open');
 });
 
 /* 生词本：默认收起的抽屉 */
