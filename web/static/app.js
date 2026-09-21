@@ -247,7 +247,9 @@ function resetStage() {
   $('#p-save-note').textContent = '总结这段讨论，存进记录';
   $('#p-save-note').disabled = false;
   $('#p-saved').innerHTML = '';
-  $('#p-recent-list').innerHTML = '';
+  $('#p-deck').innerHTML = '';
+  $('#p-pager').hidden = true;
+  $('#p-foot').hidden = true;
   $('#p-section').classList.remove('open');
   setStage(1);
   $('#p-input').focus();
@@ -266,7 +268,9 @@ async function correct() {
   // 但直接在 ① 里改一句再提交不经过那条路）
   $('#p-thread').innerHTML = '';
   $('#p-saved').innerHTML = '';
-  $('#p-recent-list').innerHTML = '';
+  $('#p-deck').innerHTML = '';
+  $('#p-pager').hidden = true;
+  $('#p-foot').hidden = true;
   $('#p-section').classList.remove('open');
   $('#p-draft').textContent = text;
   const rev = $('#p-revised');
@@ -285,7 +289,11 @@ async function correct() {
     if (m.warn || m.error) msg(m.warn || m.error);
   });
   rev.classList.remove('caret');
-  if (state.revised.trim()) renderDiff(state.draft, state.revised);
+  if (state.revised.trim()) {
+    renderDiff(state.draft, state.revised);
+    // 改完自动读一遍地道版 —— 这是练口语的，"听到正确的说法"才是重点
+    speak($('#p-revised'), state.revised, $('#p-play-rev'));
+  }
 }
 
 $('#p-go').addEventListener('click', correct);
@@ -366,7 +374,9 @@ $('#p-save-note').addEventListener('click', async (e) => {
          <div class="md"></div>
        </div>`;
     $('#p-saved .md').innerHTML = mdToHtml(r.note || '');
-    $('#p-recent-list').innerHTML = '';        // 记录变了，下次展开重新取
+    $('#p-deck').innerHTML = '';               // 记录变了，下次展开重新取
+    $('#p-pager').hidden = true;
+    $('#p-foot').hidden = true;
     $('#p-section').classList.remove('open');
   } else {
     btn.textContent = label;
@@ -384,23 +394,19 @@ $('#p-again').addEventListener('click', resetStage);
 
 /* 就地翻看最近记录，对应终端版练习循环里的 /doc（它也是只打印最近 3 条）。
    复用档案页的接口和卡片样式，不用动后端。 */
-$('#p-recent').addEventListener('click', async (e) => {
+$('#p-recent').addEventListener('click', (e) => {
   e.currentTarget.blur();                    // 留着焦点的话按方向键会给它画焦点框
-  const box = $('#p-recent-list');
   const sec = $('#p-section');
   if (sec.classList.contains('open')) {      // 再点一次收起
     sec.classList.remove('open');
-    box.innerHTML = '';
+    $('#p-deck').innerHTML = '';
+    $('#p-pager').hidden = true;
+    $('#p-foot').hidden = true;
+    activeDeck = null;
     return;
   }
   sec.classList.add('open');
-  box.innerHTML = '<div class="hint">读取中…</div>';
-  const items = await (await fetch('/api/archive?filter=draft')).json();
-  if (!items.length) { box.innerHTML = '<div class="hint">还没有记录</div>'; return; }
-  renderCards(items.slice(0, 3), box, () => { box.innerHTML = ''; $('#p-recent').click(); });
-  refreshPracticeCount();
-  box.insertAdjacentHTML('beforeend',
-    '<div class="hint" style="margin-top:6px">以上是最近 3 条，更多在「档案」页</div>');
+  loadPracticeBook();
 });
 
 /* 输入框统一走这个：键盘和按钮两条路都要有，不能只留快捷键。
@@ -490,8 +496,10 @@ function setupMic(btn) {
   // 中英混着说必然出错；把不准的文字填进输入框会让人误当成结果。
   const cap = document.createElement('div');
   cap.className = 'live-cap';
-  cap.innerHTML = '<b>实时·粗略</b><span></span>';
+  cap.innerHTML = '<b></b><span></span><em></em>';
+  const capTag = cap.querySelector('b');
   const capText = cap.querySelector('span');
+  const capHint = cap.querySelector('em');
   (field.closest('.inrow') || field).after(cap);
   const wave = $('[data-wave]', field);
   for (let i = 0; i < BARS; i++) wave.appendChild(document.createElement('i'));
@@ -541,7 +549,11 @@ function setupMic(btn) {
     // 记住开录前已有的内容 —— 不清空，方便分几次说完
     base = target.value;
     live = '';
+    capTag.textContent = '实时·粗略';
     capText.textContent = '听着…';
+    // 明确告诉用户：不点第二次不会开始转写。不然容易以为说完就完了
+    capHint.textContent = '再点一次麦克风 → 结束并开始转写';
+    cap.classList.remove('busy');
     cap.classList.add('on');
     sr = startLiveCaption(lang, (text) => {
       live = text;
@@ -552,7 +564,7 @@ function setupMic(btn) {
   async function stop() {
     on = false;
     if (sr) { try { sr.stop(); } catch (e) { /* 已经停了 */ } sr = null; }
-    cap.classList.remove('on');
+    // 不马上收起字幕行 —— 它要接着显示"正在转写"的加载状态
     // 先把 recorder 停干净拿到数据，再关音频流 —— 顺序反了会丢掉最后一段
     const blob = await new Promise((done) => {
       if (!rec || rec.state === 'inactive') return done(null);
@@ -567,14 +579,21 @@ function setupMic(btn) {
     draw(new Array(BARS).fill(0));
 
     if (!blob || blob.size < 1200) {       // 太短基本是误触
+      cap.classList.remove('on');
       field.classList.remove('recording');
       target.value = joinSpeech(base, live);   // 实时字幕里有东西就留着，别白说
       msg(live ? '录音太短，先用实时字幕的结果' : '录到的太短了');
       return;
     }
 
-    btn.textContent = '⋯';
+    // 转写要几秒，必须有明确的加载态：麦克风转圈 + 字幕行换成"正在转写"
+    btn.classList.add('busy');
     btn.disabled = true;
+    field.classList.remove('recording');
+    capTag.textContent = '转写中';
+    capText.textContent = live || '正在用本地模型识别…';
+    capHint.textContent = '';
+    cap.classList.add('busy');
     try {
       const form = new FormData();
       form.append('audio', blob, 'rec' + (blob.type.includes('mp4') ? '.mp4' : '.webm'));
@@ -598,9 +617,9 @@ function setupMic(btn) {
       if (live) { target.value = joinSpeech(base, live); msg('转写请求失败，先用实时字幕的结果'); }
       else msg('转写请求失败：' + err.message);
     } finally {
-      btn.textContent = '🎙';
+      btn.classList.remove('busy');
       btn.disabled = false;
-      field.classList.remove('recording');
+      cap.classList.remove('on', 'busy');
     }
   }
 
@@ -766,176 +785,213 @@ const deckStars = (s) => s
   ? `<span class="stars">${esc(s)}</span>`
   : '<span class="stars" style="color:var(--text-5)" title="解析里没给星级">—</span>';
 
-let deckIndex = 0;
+/* ========== 层叠轮播（coverflow）通用组件 ==========
+   生词本和练习记录都用它。抽出来是因为手势那部分（连续位移、吸附、
+   键盘、圆点、提拉展开、容器高度跟随）有一百多行，两份重复维护迟早走偏。
 
-async function loadWordBook() {
-  const deck = $('#w-deck');
-  deck.innerHTML = '<div class="hint" style="padding:10px 2px">读取中…</div>';
-  const list = await (await fetch('/api/words')).json();
-  $('#w-pager').hidden = !list.length;
-  $('#w-foot').hidden = !list.length;
-  if (!list.length) {
-    deck.innerHTML = '<div class="hint" style="padding:10px 2px">生词本还是空的，查个词存进来吧</div>';
+   调用方只提供 tile(item) 返回卡片内部 HTML，以及 onAction 处理
+   卡片里 [data-act] 按钮的点击。 */
+
+let activeDeck = null;     // 当前开着的那个轮播，键盘翻页要知道操作谁
+
+function mountCoverflow(opts) {
+  const { deck, pager, foot, posEl, dotBox, prev, next, items, tile, onAction } = opts;
+
+  pager.hidden = !items.length;
+  foot.hidden = !items.length;
+  if (!items.length) {
+    deck.innerHTML = `<div class="hint" style="padding:10px 2px">${esc(opts.emptyText || '还是空的')}</div>`;
     return;
   }
-  deckIndex = 0;
 
-  deck.innerHTML = list.map((w) => `
-    <div class="wslide" data-word="${esc(w.word)}" data-id="${w.id}">
-      <div class="wbig">
-        <div class="wbig-top">
-          ${deckStars(w.stars)}
-          <span class="wbig-prof" title="${w.proficiency == null ? '还没测过' : '熟练度 ' + w.proficiency + '/5'}">${dots(w.proficiency)}</span>
-        </div>
-        <div class="wbig-word en">${esc(w.word)}</div>
-        <div class="wbig-gloss">${esc(glossOf(w.usage))}</div>
-        <div class="wbig-foot">
-          <span>存于 ${esc(w.time || '未知')}</span>
-          <span class="chev">⌄</span>
-        </div>
-        <div class="wbig-detail">
-          <div class="wbig-detail-inner">
-            <div class="card md">${mdToHtml(w.usage || '（这个词还没有笔记）')}</div>
-            <div class="row" style="margin-top:12px">
-              <button class="pill acc" data-act="review">追问这个词</button>
-              <button class="pill" data-act="test">出题测一测</button>
-              <button class="pill" data-act="del"
-                      style="margin-left:auto;background:#5a2523;color:#f0c9c6">删除</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>`).join('');
-
+  let index = 0;
+  deck.innerHTML = items.map((it) => `
+    <div class="wslide"><div class="wbig">${tile(it)}</div></div>`).join('');
   const slides = $$('.wslide', deck);
-  const dotBox = $('#w-dots');       // 别叫 dots：外层有同名的熟练度渲染函数
-  dotBox.innerHTML = list.map(() => '<i></i>').join('');
+  dotBox.innerHTML = items.map(() => '<i></i>').join('');
 
-  /* 按「离中心的距离」摆位：中间原尺寸，两侧逐级缩小、压到后面、淡出。
-     容器高度跟着当前那张走（展开详情时会变高），所以每次摆位后重新量一次。 */
-  /* center 可以是小数 —— 滑动过程中按连续位置摆位，手感才跟得上；
-     停手后再吸附到整数。 */
-  function layout(center = deckIndex) {
+  function fitHeight() {
+    const cur = slides[index];
+    if (cur) deck.style.height = cur.querySelector('.wbig').offsetHeight + 16 + 'px';
+  }
+
+  // center 可以是小数 —— 滑动过程中按连续位置摆位，停手后才吸附到整数
+  function layout(center = index) {
     slides.forEach((sl, i) => {
       const d = i - center;
       const ad = Math.abs(d);
-      // 衰减要温和：参考的 coverflow 里侧卡是清楚可见的，不是快消失的影子
-      const scale = Math.max(0.78, 1 - ad * 0.1);
-      const shift = d * 47;                    // % of card width，产生重叠
-      sl.style.transform = `translateX(-50%) translateX(${shift}%) scale(${scale})`;
+      // 衰减刻意温和：侧卡要清楚可见，不是快消失的影子
+      sl.style.transform =
+        `translateX(-50%) translateX(${d * 47}%) scale(${Math.max(0.78, 1 - ad * 0.1)})`;
       sl.style.opacity = ad > 2 ? 0 : String(Math.max(0, 1 - ad * 0.22));
-      sl.style.zIndex = String(50 - ad);
+      sl.style.zIndex = String(50 - Math.round(ad));
       sl.style.pointerEvents = ad > 2 ? 'none' : 'auto';
-      sl.classList.toggle('active', Math.abs(d) < 0.5);
-      if (Math.abs(d) >= 0.5) sl.classList.remove('up');  // 翻走的那张自动收起
+      sl.classList.toggle('active', ad < 0.5);
+      if (ad >= 0.5) sl.classList.remove('up');     // 翻走的那张自动收起
     });
-    $('#w-pos').textContent = `${Math.round(center) + 1} / ${list.length}`;
-    $$('i', dotBox).forEach((d, k) => d.classList.toggle('on', k === deckIndex));
-    $('#w-prev').disabled = deckIndex <= 0;
-    $('#w-next-card').disabled = deckIndex >= list.length - 1;
+    posEl.textContent = `${Math.round(center) + 1} / ${items.length}`;
+    $$('i', dotBox).forEach((d, k) => d.classList.toggle('on', k === Math.round(center)));
+    prev.disabled = index <= 0;
+    next.disabled = index >= items.length - 1;
     fitHeight();
   }
 
-  function fitHeight() {
-    const cur = slides[deckIndex];
-    if (!cur) return;
-    // 卡片被 scale 过，offsetHeight 是缩放前的值，正好是我们要的布局高度
-    deck.style.height = cur.querySelector('.wbig').offsetHeight + 16 + 'px';
-  }
-
   const go = (k) => {
-    deckIndex = Math.max(0, Math.min(list.length - 1, k));
-    pos = deckIndex;              // 跟滑动共用同一个位置，否则按完按钮再滑会跳回去
+    index = Math.max(0, Math.min(items.length - 1, k));
+    pos = index;
     slides.forEach((sl) => { sl.style.transition = ''; });
     layout();
   };
 
   slides.forEach((slide, i) => {
     $('.wbig', slide).addEventListener('click', (e) => {
-      if (e.target.closest('[data-act]')) return;
-      if (i !== deckIndex) { go(i); return; }        // 点两侧的卡片 = 翻到它
-      slide.classList.toggle('up');                  // 点中间那张 = 往上提拉展开
-      setTimeout(fitHeight, 30);                     // 等 max-height 开始过渡再量
+      const act = e.target.closest('[data-act]');
+      if (act) { onAction(act.dataset.act, items[i], slide, act); return; }
+      if (i !== index) { go(i); return; }          // 点两侧的卡片 = 翻到它
+      slide.classList.toggle('up');                // 点中间那张 = 往上提拉展开
+      setTimeout(fitHeight, 30);
       setTimeout(fitHeight, 430);
-    });
-
-    const word = slide.dataset.word;
-    $('[data-act=review]', slide).addEventListener('click', () => showSavedWord(word));
-    $('[data-act=test]', slide).addEventListener('click', (e) => {
-      const b = e.target, old = b.textContent;
-      b.textContent = '出题还没接上';
-      b.disabled = true;
-      setTimeout(() => { b.textContent = old; b.disabled = false; }, 2000);
-    });
-    // 删除藏在展开后的动作里 —— 必须先点开看清是哪个词才能删，天然的一道闸
-    $('[data-act=del]', slide).addEventListener('click', async () => {
-      const r = await post('/api/archive/delete',
-        { kind: 'word', id: Number(slide.dataset.id) });
-      if (!r.ok) { toast(r.msg || '删除失败'); return; }
-      toast(`已删除「${word}」`, '撤销', async () => {
-        const u = await post('/api/archive/undo', {});
-        if (u.ok) { await loadWordBook(); refreshWordCount(); }
-        else toast(u.msg || '撤销失败');
-      });
-      await loadWordBook();
-      refreshWordCount();
     });
   });
 
-  // 同理：翻页按钮和圆点点完也要失焦，否则焦点留在它们身上，
-  // 之后按方向键会给它们画焦点框
   const nav = (fn) => (e) => { e.currentTarget.blur(); fn(); };
-  $('#w-prev').onclick = nav(() => go(deckIndex - 1));
-  $('#w-next-card').onclick = nav(() => go(deckIndex + 1));
+  prev.onclick = nav(() => go(index - 1));
+  next.onclick = nav(() => go(index + 1));
   $$('i', dotBox).forEach((d, k) => d.addEventListener('click', nav(() => go(k))));
 
-  /* 翻页手势：把横向位移当成连续的滚动位置，停手后吸附到最近一张。
-
-     之前两版都错在「锁 + 解锁」的思路上：
-       第一版 固定 260ms 冷却 → 惯性尾巴在冷却后又攒够阈值，一次手势飞过好几张
-       第二版 靠 140ms 事件间隔判断手势结束 → 触控板/Magic Mouse 松手后
-              还会持续发惯性事件，那个间隔根本等不到，锁一直不放，
-              必须把鼠标移出容器才能再滑
-     根本问题是「一次手势」在 wheel 事件流里没有可靠的边界。
-     所以不要去划分手势 —— 像原生滚动那样按位移连续响应，惯性自然变成滚动的一部分。 */
-  // 横向滑多少像素算一张。220 是实测标定的：
-  //   轻扫（约 190px）→ 0.86 → 吸附成 1 张
-  //   重扫（约 520px）→ 2.4  → 吸附成 2 张
-  //   不停顿连滑两次（约 380px）→ 1.7 → 吸附成 2 张
-  // 定成 300 时最后一种只走 1 张，感觉像丢了一次滑动。
-  const PX_PER_CARD = 220;
-  let pos = deckIndex;            // 连续位置（单位：卡片，可为小数）
-  let snapTimer = null;
-
+  /* 翻页手势：按位移连续响应 + 停手吸附，不去划分"一次手势"。
+     wheel 事件流里没有可靠的手势边界 —— 加锁的写法要么一滑飞过好几张
+     （惯性尾巴攒够阈值又翻），要么锁不放（靠事件间隔判断结束，
+     而触控板松手后还在持续发惯性事件，那个间隔等不到）。 */
+  const PX_PER_CARD = 220;     // 实测标定：轻扫≈1张，重扫≈3张，连滑两次≈2张
+  let pos = index, snapTimer = null;
   deck.onwheel = (e) => {
     if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;   // 纵向滚动交给页面
     e.preventDefault();
-    // 单个事件的贡献要设上限：某些设备偶尔会发一个几百 px 的巨大 delta
-    const step = Math.max(-60, Math.min(60, e.deltaX)) / PX_PER_CARD;
-    pos = Math.max(0, Math.min(list.length - 1, pos + step));
-    slides.forEach((sl) => { sl.style.transition = 'none'; });   // 跟手阶段不要过渡
+    const step = Math.max(-60, Math.min(60, e.deltaX)) / PX_PER_CARD;  // 上限防偶发巨大 delta
+    pos = Math.max(0, Math.min(items.length - 1, pos + step));
+    slides.forEach((sl) => { sl.style.transition = 'none'; });
     layout(pos);
-
     clearTimeout(snapTimer);
-    snapTimer = setTimeout(() => {      // 输入停了，吸附到最近一张
+    snapTimer = setTimeout(() => {
       slides.forEach((sl) => { sl.style.transition = ''; });
-      deckIndex = Math.round(pos);
-      pos = deckIndex;
+      index = Math.round(pos);
+      pos = index;
       layout();
     }, 90);
   };
 
-  // 键盘左右翻页：只在单词页、抽屉开着、焦点不在输入框时生效
-  document.onkeydown = (e) => {
-    if (!$('#v-word').classList.contains('on')) return;
-    if (!$('#w-section').classList.contains('open')) return;
-    if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
-    if (e.key === 'ArrowLeft') { e.preventDefault(); go(deckIndex - 1); }
-    if (e.key === 'ArrowRight') { e.preventDefault(); go(deckIndex + 1); }
-  };
-
+  activeDeck = { go, get index() { return index; }, count: items.length };
   layout();
-  setTimeout(fitHeight, 60);      // 字体/markdown 渲染完再量一次，高度才准
+  setTimeout(fitHeight, 60);      // markdown 渲染完再量一次，高度才准
+  return { go, reload: opts.reload };
+}
+
+// 键盘翻页统一走这里，两个轮播共用。焦点在输入框里时不抢键。
+document.addEventListener('keydown', (e) => {
+  if (!activeDeck) return;
+  if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+  if (e.key === 'ArrowLeft') { e.preventDefault(); activeDeck.go(activeDeck.index - 1); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); activeDeck.go(activeDeck.index + 1); }
+});
+
+/* ========== 生词本 ========== */
+async function loadWordBook() {
+  const list = await (await fetch('/api/words')).json();
+  mountCoverflow({
+    deck: $('#w-deck'), pager: $('#w-pager'), foot: $('#w-foot'),
+    posEl: $('#w-pos'), dotBox: $('#w-dots'),
+    prev: $('#w-prev'), next: $('#w-next-card'),
+    items: list,
+    emptyText: '生词本还是空的，查个词存进来吧',
+    tile: (w) => `
+      <div class="wbig-top">
+        ${deckStars(w.stars)}
+        <span class="wbig-prof" title="${w.proficiency == null ? '还没测过' : '熟练度 ' + w.proficiency + '/5'}">${dots(w.proficiency)}</span>
+      </div>
+      <div class="wbig-word en">${esc(w.word)}</div>
+      <div class="wbig-gloss">${esc(glossOf(w.usage))}</div>
+      <div class="wbig-foot">
+        <span>存于 ${esc(w.time || '未知')}</span>
+        <span class="chev">⌄</span>
+      </div>
+      <div class="wbig-detail"><div class="wbig-detail-inner">
+        <div class="card md">${mdToHtml(w.usage || '（这个词还没有笔记）')}</div>
+        <div class="row" style="margin-top:12px">
+          <button class="pill acc" data-act="review">追问这个词</button>
+          <button class="pill" data-act="test">出题测一测</button>
+          <button class="pill" data-act="del" style="margin-left:auto;background:#5a2523;color:#f0c9c6">删除</button>
+        </div>
+      </div></div>`,
+    onAction: async (act, w, slide, btn) => {
+      if (act === 'review') return showSavedWord(w.word);
+      if (act === 'test') {
+        const old = btn.textContent;
+        btn.textContent = '出题还没接上';
+        btn.disabled = true;
+        setTimeout(() => { btn.textContent = old; btn.disabled = false; }, 2000);
+        return;
+      }
+      // 删除藏在提拉展开后的动作里 —— 必须先点开看清是哪个词才能删
+      const r = await post('/api/archive/delete', { kind: 'word', id: w.id });
+      if (!r.ok) { toast(r.msg || '删除失败'); return; }
+      toast(`已删除「${w.word}」`, '撤销', async () => {
+        const u = await post('/api/archive/undo', {});
+        if (u.ok) { await loadWordBook(); refreshWordCount(); } else toast(u.msg || '撤销失败');
+      });
+      await loadWordBook();
+      refreshWordCount();
+    },
+  });
+}
+
+/* ========== 练习记录：跟生词本同一套轮播 ========== */
+async function loadPracticeBook() {
+  // 全部显示。之前只取 3 条是照搬终端版 /doc 的做法，不是资源考虑；
+  // 做成幻灯片之后没有只给 3 条的理由了。
+  const items = await (await fetch('/api/archive?filter=draft')).json();
+  mountCoverflow({
+    deck: $('#p-deck'), pager: $('#p-pager'), foot: $('#p-foot'),
+    posEl: $('#p-pos'), dotBox: $('#p-dots'),
+    prev: $('#p-prev'), next: $('#p-next-card'),
+    items,
+    emptyText: '还没有练习记录，改一句存进来吧',
+    tile: (it) => `
+      <div class="wbig-top">
+        <span class="wbig-badge">${esc(it.when)}</span>
+        ${it.note ? '<span class="wbig-prof" title="有分析笔记">📝</span>' : ''}
+      </div>
+      ${it.old ? `<div class="wbig-old en">${esc(it.old)}</div>` : ''}
+      <div class="wbig-new en">${esc(it.title || '')}</div>
+      <div class="wbig-foot">
+        <span>${it.note ? '点开看分析笔记' : '点开看详情'}</span>
+        <span class="chev">⌄</span>
+      </div>
+      <div class="wbig-detail"><div class="wbig-detail-inner">
+        ${it.old ? `<div class="label">你说的</div><div class="en" style="color:var(--text-3);margin-bottom:10px">${esc(it.old)}</div>` : ''}
+        <div class="label acc">地道版</div>
+        <div class="en" style="margin-bottom:12px">${esc(it.title || '')}</div>
+        ${it.note ? `<div class="card md">${mdToHtml(it.note)}</div>` : '<div class="hint">这条没有分析笔记</div>'}
+        <div class="row" style="margin-top:12px">
+          <button class="pill" data-act="play">▶ 朗读地道版</button>
+          <button class="pill" data-act="del" style="margin-left:auto;background:#5a2523;color:#f0c9c6">删除</button>
+        </div>
+      </div></div>`,
+    onAction: async (act, it, slide, btn) => {
+      if (act === 'play') {
+        const el = $('.wbig-new', slide);
+        return speak(el, it.title || '', btn);
+      }
+      const r = await post('/api/archive/delete', { kind: 'draft', id: it.id });
+      if (!r.ok) { toast(r.msg || '删除失败'); return; }
+      toast('已删除这条记录', '撤销', async () => {
+        const u = await post('/api/archive/undo', {});
+        if (u.ok) { await loadPracticeBook(); refreshPracticeCount(); } else toast(u.msg || '撤销失败');
+      });
+      await loadPracticeBook();
+      refreshPracticeCount();
+    },
+  });
 }
 
 function closeWordBook() {
@@ -943,6 +999,7 @@ function closeWordBook() {
   $('#w-pager').hidden = true;
   $('#w-foot').hidden = true;
   $('#w-section').classList.remove('open');
+  activeDeck = null;                 // 关了就别再吃键盘方向键
 }
 
 $('#w-book').addEventListener('click', (e) => {

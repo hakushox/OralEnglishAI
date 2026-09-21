@@ -91,7 +91,18 @@
           <span class="section-count" id="p-count"></span>
           <span class="chev">⌄</span>
         </button>
-        <div class="section-body"><div id="p-recent-list"></div></div>
+        <div class="section-body">
+          <div class="pager" id="p-pager" hidden>
+            <button class="pager-nav" id="p-prev" aria-label="上一条">‹</button>
+            <div class="cover" id="p-deck"></div>
+            <button class="pager-nav" id="p-next-card" aria-label="下一条">›</button>
+          </div>
+          <div class="pager-foot" id="p-foot" hidden>
+            <span class="deck-pos" id="p-pos"></span>
+            <div class="dots" id="p-dots"></div>
+            <span class="hint">点两侧卡片切换 · ‹ › 或 ← → 翻页</span>
+          </div>
+        </div>
       </div>
 
       <div class="row" style="margin-top:6px;justify-content:space-between">
