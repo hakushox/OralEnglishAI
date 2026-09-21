@@ -2,3 +2,4 @@
 #   pip install -r requirements-web.txt
 fastapi==0.141.1
 uvicorn==0.53.0
+python-multipart==0.0.32   # 语音转写要接收 multipart 上传

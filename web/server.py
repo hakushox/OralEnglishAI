@@ -3,7 +3,7 @@ SpeakNatural 浏览器版后端。
 
 已接真实逻辑：练习主流程、语音合成、档案页（含分析语法习惯 / 删除）、
 单词模块、长难句、随便问。
-仍是假数据（标了 MOCK）：选词浮层、语音转写、单词的「出题练一练」。
+仍是假数据（标了 MOCK）：选词浮层、单词的「出题练一练」。
 
 流式接口统一按行返回 JSON（NDJSON），事件类型见 web/engine.py 的说明。
 """
@@ -11,15 +11,17 @@ SpeakNatural 浏览器版后端。
 import asyncio
 import base64
 import json
+import os
+import tempfile
 from pathlib import Path
 
-from fastapi import Body, FastAPI
+from fastapi import Body, FastAPI, File, Form, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import review
 
-from web import engine, prompts, store, tts
+from web import engine, prompts, stt, store, tts
 
 STATIC_DIR = Path(__file__).parent / 'static'
 
@@ -39,6 +41,9 @@ class NoCacheStatic(StaticFiles):
 
 
 app.mount('/static', NoCacheStatic(directory=STATIC_DIR), name='static')
+
+# 后台预热 whisper：模型加载要十几秒，等用户第一次录音才加载体验很差
+stt.warm()
 
 
 @app.get('/')
@@ -165,11 +170,32 @@ async def save_note(payload: dict = Body(...)):
     return {'ok': True, 'matched': matched, 'summarized': len(answers) > 1, 'note': note}
 
 
-@app.post('/api/practice/transcribe')
-async def transcribe():
-    """MOCK：真实版本接收浏览器上传的音频，走 faster-whisper 转写"""
-    await asyncio.sleep(0.8)
-    return {'text': 'I very like this movie because it have good story'}
+@app.get('/api/transcribe/status')
+async def transcribe_status():
+    return stt.status()
+
+
+@app.post('/api/transcribe')
+def transcribe(audio: UploadFile = File(...), lang: str = Form('en')):
+    """接收浏览器录的音频，转成文字。
+
+    lang 由前端按输入框传：造句/句子/查词框传 en，追问框和随便问传 zh，
+    传 auto 则让模型自己判断。写成 def（非 async）是有意的 ——
+    转写是 CPU 密集且阻塞的，FastAPI 会把同步端点放进线程池，不会卡住事件循环。
+    """
+    suffix = Path(audio.filename or 'rec.webm').suffix or '.webm'
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+        f.write(audio.file.read())
+        tmp = f.name
+    try:
+        text, err = stt.transcribe(tmp, None if lang == 'auto' else lang)
+    finally:
+        os.unlink(tmp)
+    if err:
+        return {'ok': False, 'msg': err}
+    if not text:
+        return {'ok': False, 'msg': '没听清，再说一次？'}
+    return {'ok': True, 'text': text}
 
 
 # ==================== 语音合成 ====================

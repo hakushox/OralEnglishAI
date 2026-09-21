@@ -423,14 +423,24 @@ function bindSend(inputSel, buttonSel, handler) {
 bindSend('#p-why-input', '#p-why-send',
   (question) => askWhy('/api/practice/why/followup', { question }, question));
 
-/* ========== 录音：每个输入框各管各的 ==========
+/* ========== 录音 + 转写：每个输入框各管各的 ==========
    录到的文字只填进自己那个框，不切换页面状态 ——
-   说话是一种输入方式，不该等于"开始新对话"。 */
+   说话是一种输入方式，不该等于"开始新对话"。
+   语言按框的性质走（data-lang）：造句/句子/查词框说英文，追问框和随便问说中文。 */
 const BARS = 22;
+
+// 浏览器支持的录音格式不一样：Chrome/Edge 走 webm+opus，Safari 只有 mp4。
+// 传空字符串让浏览器自己挑，比硬写一个不支持的格式安全。
+function pickMime() {
+  const want = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+  if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return '';
+  return want.find((t) => MediaRecorder.isTypeSupported(t)) || '';
+}
 
 function setupMic(btn) {
   const field = btn.closest('.field');
   const target = $(btn.dataset.mic);
+  const lang = btn.dataset.lang || 'auto';
   const wave = $('[data-wave]', field);
   for (let i = 0; i < BARS; i++) wave.appendChild(document.createElement('i'));
   const bars = $$('i', wave);
@@ -441,13 +451,20 @@ function setupMic(btn) {
     b.style.background = v > 17 ? 'var(--accent-hi)' : v > 9 ? 'var(--accent)' : 'var(--accent-dim)';
   });
 
-  let on = false, raf = null, media = null, ctx = null;
+  let on = false, raf = null, media = null, ctx = null, rec = null, chunks = [];
 
   async function start() {
-    on = true;
-    field.classList.add('recording');
     try {
       media = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      msg('拿不到麦克风权限，检查一下系统设置里的隐私权限');
+      return;
+    }
+    on = true;
+    field.classList.add('recording');
+
+    // 波形和录音共用同一路音频流
+    try {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
       const an = ctx.createAnalyser();
       an.fftSize = 64;
@@ -459,30 +476,67 @@ function setupMic(btn) {
         raf = requestAnimationFrame(loop);
       };
       loop();
-    } catch (err) {
-      msg('拿不到麦克风权限，先用假波形演示');
-      const loop = () => { draw(Array.from({ length: BARS }, () => 4 + Math.random() * 20)); raf = setTimeout(loop, 90); };
-      loop();
-    }
+    } catch (err) { /* 波形画不出来不影响录音 */ }
+
+    chunks = [];
+    const mime = pickMime();
+    rec = new MediaRecorder(media, mime ? { mimeType: mime } : undefined);
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    rec.start();
   }
 
   async function stop() {
     on = false;
-    if (raf) { cancelAnimationFrame(raf); clearTimeout(raf); raf = null; }
+    // 先把 recorder 停干净拿到数据，再关音频流 —— 顺序反了会丢掉最后一段
+    const blob = await new Promise((done) => {
+      if (!rec || rec.state === 'inactive') return done(null);
+      rec.onstop = () => done(new Blob(chunks, { type: rec.mimeType || 'audio/webm' }));
+      rec.stop();
+    });
+
+    if (raf) { cancelAnimationFrame(raf); raf = null; }
     if (media) { media.getTracks().forEach((t) => t.stop()); media = null; }
     if (ctx) { ctx.close(); ctx = null; }
+    rec = null;
     draw(new Array(BARS).fill(0));
-    btn.textContent = '…';
-    const d = await (await fetch('/api/practice/transcribe', { method: 'POST' })).json();
-    btn.textContent = '🎙';
-    field.classList.remove('recording');
-    // 只填进这个框，让用户先改再提交 —— 识别总有错，跟终端版 edit_text() 一个道理
-    target.value = d.text;
-    target.focus();
+
+    if (!blob || blob.size < 1200) {       // 太短基本是误触
+      field.classList.remove('recording');
+      msg('录到的太短了');
+      return;
+    }
+
+    btn.textContent = '⋯';
+    btn.disabled = true;
+    try {
+      const form = new FormData();
+      form.append('audio', blob, 'rec' + (blob.type.includes('mp4') ? '.mp4' : '.webm'));
+      form.append('lang', lang);
+      const r = await (await fetch('/api/transcribe', { method: 'POST', body: form })).json();
+      if (r.ok) {
+        // 只填进这个框，让用户先改再提交 —— 识别总有错，
+        // 跟终端版 edit_text() 一个道理
+        target.value = r.text;
+        target.focus();
+      } else {
+        msg(r.msg || '转写失败');
+      }
+    } catch (err) {
+      msg('转写请求失败：' + err.message);
+    } finally {
+      btn.textContent = '🎙';
+      btn.disabled = false;
+      field.classList.remove('recording');
+    }
   }
 
   btn.addEventListener('click', () => (on ? stop() : start()));
 }
+
+// 进页面就问一次模型状态：还在加载的话提前告诉用户，别等按了才发现要等十几秒
+fetch('/api/transcribe/status').then((r) => r.json()).then((d) => {
+  if (!d.ready) console.info('[stt] ' + d.msg);
+});
 
 $$('.mic-btn').forEach(setupMic);
 

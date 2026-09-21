@@ -20,16 +20,25 @@
 | 随便问 | 快速档=本地 / 深度档=云端（真的换模型和 prompt）、总结存档 |
 | 档案 | 四类记录合并展示、展开全文、左滑删除带撤销、分析语法习惯 |
 
-**还是假的（三个洞，按重要性排）**
+**语音转写已接真**（`web/stt.py`）：浏览器 `MediaRecorder` 录音 → multipart 上传
+→ faster-whisper `large-v3-turbo`。几个要点：
 
-1. **语音转写** —— `/api/practice/transcribe` 返回写死的句子。
-   麦克风权限和波形是真的，所以**极容易误判成已经能用**。
-   这是个练口语的 app，这个洞最要紧。要做：浏览器 `MediaRecorder` 上传音频 +
-   后端 faster-whisper（`groq_tts.py:listen()` 有现成逻辑但绑了终端录音，得改成收上传文件）。
-2. **出题练一练** —— 三个 prompt（`QUESTION_GEN` / `GRADE_ANSWER` /
+- 模型**懒加载 + 常驻内存**，服务启动时后台线程预热。不能放模块顶层
+  （CPU 上加载十几秒，会把启动拖死），也不能每次请求重载。
+- **语言按输入框传**（`data-lang`）：造句/句子/查词框传 `en`，各处追问框和随便问传 `zh`。
+  实测 whisper 其实会无视错误的语言强制（英文音频传 `zh` 照样输出英文），
+  所以终端版写死 `language='zh'` 不算坏；但短句和单个词时按框分更稳。
+- 录音格式让浏览器自己挑（Chrome 走 webm+opus，Safari 只有 mp4），
+  见 `app.js:pickMime()`。停录时**必须先停 recorder 拿到数据再关音频流**，
+  顺序反了会丢最后一段。
+- 转写失败不要把原始异常和临时文件路径吐给用户，说人话，细节留服务端日志。
+
+**还是假的（按重要性排）**
+
+1. **出题练一练** —— 三个 prompt（`QUESTION_GEN` / `GRADE_ANSWER` /
    `PRACTICE_CONCLUSION`）和 `save_path.update_word_proficiency` 都现成，没接。
    接上之后生词本卡片上那些「未测」才会变成真实熟练度。
-3. **选词浮层** —— `/api/lookup/{word}` 是占位释义。打算用本地 ollama 快速出一句。
+2. **选词浮层** —— `/api/lookup/{word}` 是占位释义。打算用本地 ollama 快速出一句。
 
 **不在功能清单里但必须做的：打包。**
 pyinstaller 入口还指着 `edgetts.py`，`web/static/` 也没作为数据文件塞进去，
