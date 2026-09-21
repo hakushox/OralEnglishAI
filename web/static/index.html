@@ -72,17 +72,26 @@
         <!-- 保存整段讨论：固定在线索末尾，不再是每轮角上一个小图标 -->
         <div class="row" style="margin-top:14px">
           <button class="pill acc big" id="p-save-note">总结这段讨论，存进记录</button>
-          <button class="invite subtle" id="p-again" style="margin-left:auto">换一句继续练<span class="chev">⌄</span></button>
         </div>
         <!-- 存完把实际存进去的内容显示出来，让用户能当场确认总结对不对 -->
         <div id="p-saved"></div>
       </div>
 
-      <!-- 就地翻看最近的记录，不用跳去档案页。对应终端版的 /doc。
-           阶段① 不显示，那一屏要保持干净。 -->
-      <div class="st234">
-        <button class="invite subtle" id="p-recent">看看最近存的几条<span class="chev">⌄</span></button>
-        <div id="p-recent-list"></div>
+      <!-- 「换一句」从阶段②就要有：有些句子不需要深入问。
+           以前它只在阶段④出现，不点「为什么这么改」就没有出路，是个死胡同。 -->
+      <div class="st2up row" style="margin-top:14px">
+        <button class="invite subtle" id="p-again" style="margin-left:auto">换一句继续练<span class="chev">⌄</span></button>
+      </div>
+
+      <!-- 次级板块：跟单词页的「我的生词本」同一套 .section 规范。
+           对应终端版练习循环里的 /doc。 -->
+      <div class="section" id="p-section">
+        <button class="section-head" id="p-recent">
+          <span class="section-title">最近的练习记录</span>
+          <span class="section-count" id="p-count"></span>
+          <span class="chev">⌄</span>
+        </button>
+        <div class="section-body"><div id="p-recent-list"></div></div>
       </div>
 
       <div class="row" style="margin-top:6px;justify-content:space-between">

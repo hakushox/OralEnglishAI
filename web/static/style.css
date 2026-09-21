@@ -227,8 +227,7 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 .stage[data-stage="3"] .st2,
 .stage[data-stage="3"] .st4,
 .stage[data-stage="4"] .st1,
-.stage[data-stage="4"] .st2,
-.stage[data-stage="1"] .st234 { display: none; }
+.stage[data-stage="4"] .st2 { display: none; }
 
 /* 展开后箭头翻转，跟折叠线索的标题头一个规则 */
 .invite.open .chev { transform: rotate(180deg); animation: none; }
@@ -319,6 +318,24 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 .field.recording input, .field.recording textarea { padding-right: 116px; }
 /* 不给录音中的输入框加压暗/斜体 —— 框里同时有"已确认的前半截"和
    "正在识别的新内容"，整框变样会误伤前半截。录音状态靠波形和亮起的麦克风表示。 */
+
+/* 实时字幕单独一行，不写进输入框。
+   浏览器自带识别只能设一种语言，中英混着说必然出错 ——
+   把不准的文字直接填进输入框会让人误当成结果。放这儿明确标成"粗略"，
+   输入框只放 whisper 的定稿。 */
+.live-cap {
+  display: none; align-items: baseline; gap: 8px;
+  margin-top: 8px; padding: 0 2px;
+  font-size: 13px; line-height: 1.5; color: var(--text-3);
+  animation: fade 0.2s var(--ease);
+}
+.live-cap.on { display: flex; }
+.live-cap b {
+  flex: none; font-size: 10px; font-weight: 400; letter-spacing: 0.08em;
+  color: var(--accent-dim); border: 0.5px solid var(--accent-dim);
+  border-radius: 4px; padding: 1px 5px;
+}
+.live-cap span { font-style: italic; }
 .wave i {
   width: 2px; height: 3px; background: var(--accent-dim);
   border-radius: 2px; transition: height 0.08s linear, background 0.15s linear;

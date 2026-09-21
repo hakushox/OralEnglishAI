@@ -248,7 +248,7 @@ function resetStage() {
   $('#p-save-note').disabled = false;
   $('#p-saved').innerHTML = '';
   $('#p-recent-list').innerHTML = '';
-  $('#p-recent').classList.remove('open');
+  $('#p-section').classList.remove('open');
   setStage(1);
   $('#p-input').focus();
 }
@@ -267,7 +267,7 @@ async function correct() {
   $('#p-thread').innerHTML = '';
   $('#p-saved').innerHTML = '';
   $('#p-recent-list').innerHTML = '';
-  $('#p-recent').classList.remove('open');
+  $('#p-section').classList.remove('open');
   $('#p-draft').textContent = text;
   const rev = $('#p-revised');
   rev.textContent = '';
@@ -367,7 +367,7 @@ $('#p-save-note').addEventListener('click', async (e) => {
        </div>`;
     $('#p-saved .md').innerHTML = mdToHtml(r.note || '');
     $('#p-recent-list').innerHTML = '';        // 记录变了，下次展开重新取
-    $('#p-recent').classList.remove('open');
+    $('#p-section').classList.remove('open');
   } else {
     btn.textContent = label;
     btn.disabled = false;
@@ -385,17 +385,20 @@ $('#p-again').addEventListener('click', resetStage);
 /* 就地翻看最近记录，对应终端版练习循环里的 /doc（它也是只打印最近 3 条）。
    复用档案页的接口和卡片样式，不用动后端。 */
 $('#p-recent').addEventListener('click', async (e) => {
+  e.currentTarget.blur();                    // 留着焦点的话按方向键会给它画焦点框
   const box = $('#p-recent-list');
-  if (box.innerHTML) {                       // 再点一次收起
+  const sec = $('#p-section');
+  if (sec.classList.contains('open')) {      // 再点一次收起
+    sec.classList.remove('open');
     box.innerHTML = '';
-    e.target.classList.remove('open');
     return;
   }
-  e.target.classList.add('open');
+  sec.classList.add('open');
   box.innerHTML = '<div class="hint">读取中…</div>';
   const items = await (await fetch('/api/archive?filter=draft')).json();
   if (!items.length) { box.innerHTML = '<div class="hint">还没有记录</div>'; return; }
   renderCards(items.slice(0, 3), box, () => { box.innerHTML = ''; $('#p-recent').click(); });
+  refreshPracticeCount();
   box.insertAdjacentHTML('beforeend',
     '<div class="hint" style="margin-top:6px">以上是最近 3 条，更多在「档案」页</div>');
 });
@@ -482,6 +485,14 @@ function setupMic(btn) {
   const field = btn.closest('.field');
   const target = $(btn.dataset.mic);
   const lang = btn.dataset.lang || 'auto';
+
+  // 实时字幕单独一行，不写进输入框。浏览器自带识别只能设一种语言，
+  // 中英混着说必然出错；把不准的文字填进输入框会让人误当成结果。
+  const cap = document.createElement('div');
+  cap.className = 'live-cap';
+  cap.innerHTML = '<b>实时·粗略</b><span></span>';
+  const capText = cap.querySelector('span');
+  (field.closest('.inrow') || field).after(cap);
   const wave = $('[data-wave]', field);
   for (let i = 0; i < BARS; i++) wave.appendChild(document.createElement('i'));
   const bars = $$('i', wave);
@@ -527,18 +538,21 @@ function setupMic(btn) {
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     rec.start();
 
-    // 记住开录前已有的内容，实时字幕接在它后面 —— 不清空，方便分几次说完
+    // 记住开录前已有的内容 —— 不清空，方便分几次说完
     base = target.value;
     live = '';
+    capText.textContent = '听着…';
+    cap.classList.add('on');
     sr = startLiveCaption(lang, (text) => {
       live = text;
-      if (on) target.value = joinSpeech(base, text);
+      if (on) capText.textContent = text || '听着…';
     });
   }
 
   async function stop() {
     on = false;
     if (sr) { try { sr.stop(); } catch (e) { /* 已经停了 */ } sr = null; }
+    cap.classList.remove('on');
     // 先把 recorder 停干净拿到数据，再关音频流 —— 顺序反了会丢掉最后一段
     const blob = await new Promise((done) => {
       if (!rec || rec.state === 'inactive') return done(null);
@@ -555,7 +569,7 @@ function setupMic(btn) {
     if (!blob || blob.size < 1200) {       // 太短基本是误触
       field.classList.remove('recording');
       target.value = joinSpeech(base, live);   // 实时字幕里有东西就留着，别白说
-      msg(live ? '录音太短，先用实时识别的结果' : '录到的太短了');
+      msg(live ? '录音太短，先用实时字幕的结果' : '录到的太短了');
       return;
     }
 
@@ -576,12 +590,12 @@ function setupMic(btn) {
         // whisper 失败但实时字幕有内容，就留着它 —— 比清空让用户重说一遍好
         target.value = joinSpeech(base, live);
         target.focus();
-        msg('本地识别失败，先用实时识别的结果，可以改');
+        msg('本地识别失败，先用实时字幕的结果，可以改');
       } else {
         msg(r.msg || '转写失败');
       }
     } catch (err) {
-      if (live) { target.value = joinSpeech(base, live); msg('转写请求失败，先用实时识别的结果'); }
+      if (live) { target.value = joinSpeech(base, live); msg('转写请求失败，先用实时字幕的结果'); }
       else msg('转写请求失败：' + err.message);
     } finally {
       btn.textContent = '🎙';
@@ -1357,6 +1371,11 @@ document.addEventListener('mouseup', async (e) => {
   });
 });
 
+async function refreshPracticeCount() {
+  const items = await (await fetch('/api/archive?filter=draft')).json();
+  $('#p-count').textContent = items.length ? `${items.length} 条` : '还是空的';
+}
+
 /* ========== 悬停提示 ==========
    用自己的浮层而不是原生 title：原生的延迟各浏览器不一致、样式也没法跟界面统一。
    1 秒延迟是刻意的 —— 太快会在鼠标路过时乱闪。 */
@@ -1392,3 +1411,4 @@ $$('[data-tip]').forEach((el) => {
 /* ========== 初始 ========== */
 fetch('/api/archive?filter=all').then((r) => r.json())
   .then((items) => { $('#arc-count').textContent = items.length; });
+refreshPracticeCount();
