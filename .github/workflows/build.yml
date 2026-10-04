@@ -1,0 +1,106 @@
+# 打包浏览器版，出各平台的 zip。
+#
+# 触发：手动（Actions 页面点 Run workflow）或推 v 开头的 tag（顺便建 Release）。
+# 不挂在每次 push 上 —— 一次构建十几分钟，平时改代码用不着。
+#
+# **为什么没有 Intel Mac**：faster-whisper 硬依赖 onnxruntime>=1.14，
+# 而 onnxruntime 从 1.10 起就不再发 macOS x86_64 轮子了（最后一个是 1.9.0，2021 年）。
+# Intel Mac 要么放弃本地语音识别，要么自己编译 onnxruntime，都不划算。
+name: 打包
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write        # 打 tag 时要建 Release
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false   # 一个平台挂了，另一个照样出包
+      matrix:
+        include:
+          - os: macos-14          # Apple Silicon
+            label: macOS-AppleSilicon
+          - os: windows-latest
+            label: Windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'   # 跟本机开发环境一致
+          cache: pip
+
+      # API_KEY.py 没进 git（它是密钥文件），但 review.py 顶层 import 它，
+      # 不造一个出来，打出的包一启动就崩。
+      #
+      # 默认写占位字符串 —— **发出去的包里没有真 key**，云端功能不可用，
+      # 用户装了 ollama 走本地。要让 Release 带上真 key，就在仓库的
+      # Settings → Secrets 里配同名 secret；但那等于把 key 发给每个下载者，
+      # 公开仓库尤其别这么干。
+      #
+      # 注意占位串不能是空字符串：OpenAI 客户端见到空 key 会在构造时直接抛异常。
+      - name: 生成 API_KEY.py
+        shell: python
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          CLOUDFLARE_API_KEY: ${{ secrets.CLOUDFLARE_API_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          import os
+          names = ['GROQ_API_KEY', 'CEREBRAS_API_KEY',
+                   'CLOUDFLARE_API_KEY', 'CLOUDFLARE_ACCOUNT_ID']
+          lines = ['# CI 生成，不要提交\n']
+          for n in names:
+              v = os.environ.get(n) or 'PLACEHOLDER-NO-CLOUD-KEY'
+              lines.append(f'{n} = {v!r}\n')
+          open('API_KEY.py', 'w').write(''.join(lines))
+          print('已生成 API_KEY.py，占位:',
+                [n for n in names if not os.environ.get(n)])
+
+      - name: 装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-web.txt pyinstaller==6.21.0
+
+      - name: 打包
+        run: python build_web.py
+
+      # zip 必须保住可执行位和符号链接，所以 macOS 用 ditto 而不是 zip
+      - name: 压缩（macOS）
+        if: runner.os == 'macOS'
+        run: ditto -c -k --keepParent dist/SpeakNatural SpeakNatural-${{ matrix.label }}.zip
+
+      - name: 压缩（Windows）
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/SpeakNatural -DestinationPath SpeakNatural-${{ matrix.label }}.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpeakNatural-${{ matrix.label }}
+          path: SpeakNatural-${{ matrix.label }}.zip
+          retention-days: 14
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+      - name: 建 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" packages/*.zip \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "首次打开要去 系统设置 → 隐私与安全性 放行（没有做代码签名）。
+          第一次录音会下载约 1.5G 的语音模型，界面顶部有进度条。"

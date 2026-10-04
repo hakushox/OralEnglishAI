@@ -1,5 +1,22 @@
-# 浏览器版额外依赖（原 requirements.txt 不动）
+# 浏览器版的**完整**运行时依赖（原 requirements.txt 是终端版的，不动）
+#
 #   pip install -r requirements-web.txt
+#
+# CI 打包也只装这一份（见 .github/workflows/build.yml），所以这里必须是完整的 ——
+# 少一个，打出来的包在用户机器上才会报 ModuleNotFoundError。
+# 比终端版少了 sounddevice / soundfile：浏览器版不碰本机音频设备。
+
+# 服务
 fastapi==0.141.1
 uvicorn==0.53.0
 python-multipart==0.0.32   # 语音转写要接收 multipart 上传
+
+# 模型调用
+openai==2.44.0             # 云端（groq / cloudflare 都走 OpenAI 兼容接口）
+ollama==0.6.2              # 本地兜底
+edge_tts==7.2.8            # 语音合成
+faster-whisper==1.2.1      # 语音转写，连带 ctranslate2 / onnxruntime / av / tokenizers
+
+# review.py 和 save_path.py 顶层 import 了它们，不装起不来
+prompt_toolkit==3.0.52
+rich==15.0.0
