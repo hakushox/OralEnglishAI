@@ -1,5 +1,22 @@
 打包
 
+### 浏览器版（现在分发的就是这个）
+
+    ./build_web.sh          # 只打包，产物 dist/SpeakNatural/
+    ./build_web.sh --app    # 打包并写进 SpeakNaturalLauncher.app
+
+真正的参数在 build_web.py 里（Windows 和 GitHub Actions 也用那一份）。
+spec 是生成物，改脚本不要改 spec。
+
+发版：推一个 v 开头的 tag，GitHub Actions 出 mac(arm64) + windows 两个 zip 并建 Release。
+
+    git tag v0.2.0 && git push origin v0.2.0
+
+手动触发：仓库 Actions 页面 → 打包 → Run workflow。
+语音模型（约 1.5G）不随包，用户第一次运行时自己下载，界面顶部有进度条。
+
+### 终端版（迁移期留着备查，不再分发）
+
 pyinstaller --name SpeakNatural --icon=images/icon.icns --collect-all sounddevice edgetts.py 
 pyinstaller --name SpeakNatural --icon=images/icon.ico --collect-all faster_whisper --collect-all sounddevice edgetts.py 
 pyinstaller --clean --name SpeakNatural --icon=images/icon.icns --collect-all faster_whisper --collect-all sounddevice edgetts.py 

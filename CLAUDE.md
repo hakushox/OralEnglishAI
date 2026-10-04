@@ -65,37 +65,73 @@
 
 **还是假的**
 
-1. **选词浮层** —— 三个 prompt（`QUESTION_GEN` / `GRADE_ANSWER` /
-   `PRACTICE_CONCLUSION`）和 `save_path.update_word_proficiency` 都现成，没接。
-   接上之后生词本卡片上那些「未测」才会变成真实熟练度。
-   `/api/lookup/{word}` 是占位释义。打算用本地 ollama 快速出一句。
+1. **选词浮层** —— 划词弹出的小卡片，释义来自 `/api/lookup/{word}`，那是个占位实现。
+   打算用本地 ollama 快速出一句。
 
-**不在功能清单里但必须做的：打包（建议下一步就做）。**
+**打包已经跑通（浏览器版）**
 
-pyinstaller 入口还指着 `edgetts.py`，`web/static/` 也没作为数据文件塞进去，
-`SpeakNaturalLauncher.app` 双击启动的还是终端版。这是"能分发的程序"这个原始目标的最后一环。
+```bash
+./build_web.sh          # 出 dist/SpeakNatural/
+./build_web.sh --app    # 顺便写进 SpeakNaturalLauncher.app（只有 macOS 有意义）
+```
 
-**建议先做打包而不是先补功能** —— 它会暴露一批现在看不见的问题，越晚发现越贵。
-已经预见到的几个：
+**打包参数的唯一事实来源是 `build_web.py`**，别在别处再抄一份：`build_web.sh` 只是
+拿 venv 的 python 去调它，CI 也是调它。写成 .py 是因为 Windows 跑不了 shell 脚本，
+而那串 `--collect-all` 抄成两份迟早对不上。
 
-| 问题 | 说明 |
+入口换成了 `run_web.py`，`.app` 双击起来的已经是浏览器版（可执行文件仍叫
+`SpeakNatural`，所以 `for AppleScript` 那段脚本不用改）。打包后实测通过：
+首页 / 静态文件 / 档案与生词本读盘 / edge-tts 合成 / whisper 转写（av 解码 +
+onnxruntime VAD）/ 本地 ollama 纠正 / 云端 groq 追问。
+
+之前预见的几个坑，各自是这么处理的：
+
+| 坑 | 处理 |
 | --- | --- |
-| 静态文件路径 | `web/server.py` 用 `Path(__file__).parent / 'static'`，frozen 环境下要走 `sys._MEIPASS`；`web/static/*` 必须作为 datas 打进去 |
-| whisper 模型 | 缓存在 `~/.cache/huggingface/hub`（`faster-whisper-large-v3-turbo`，约 1.5GB）。用户机器上没有，首次录音会静默下载很久 —— 要么随包分发，要么在界面上明确提示进度 |
-| ollama | `engine.get_local_model()` 靠 `subprocess` 跑 `ollama list`。用户没装 ollama 时纠正会回落到云端，行为正确但要在界面上说清楚 |
-| 端口占用 | `run_web.py` 硬编码 8765，被占用时直接抛异常退出。打包版应该自动换端口或给出明确提示 |
-| 入口 | pyinstaller 的入口要换成 `run_web.py`；`.app` 的 AppleScript（见仓库里 `for AppleScript`）也要跟着改 |
-| 依赖收集 | `--collect-all faster_whisper`、`uvicorn` 和 `fastapi` 的动态导入都要显式收集，参考 `notes` 里现有的命令 |
+| 静态文件路径 | 新增 `web/bundle.py:resource()`，frozen 时走 `sys._MEIPASS`；`web/static` 由 `--add-data` 打进包。以后再有随包文件也走它，别写 `Path(__file__).parent` |
+| whisper 模型 | **不随包**（随包要 1.8G，zip 逼近 GitHub Release 的 2G 上限）。`stt.py` 把状态拆成 下载中 / 加载中 / 失败，`/api/env` 带百分比（按 HF 缓存 blobs 的字节数算），前端顶部 `#sysbar` 显示进度条 |
+| ollama | `/api/env` 返回 `local_model`，没装时 `#sysbar` 提示「改写会走云端（需要联网）」，可以点 × 关掉 |
+| 端口占用 | `run_web.py:pick_port()` 从 8765 起往后顺延 20 个，全占用就让系统随便给一个；`SPEAKNATURAL_PORT` 可以改起点 |
+| 入口 | 必须 `from web.server import app` 真 import 再传给 uvicorn —— 字符串形式 `'web.server:app'` pyinstaller 静态分析看不见，打出来的包一启动就 ModuleNotFoundError |
+| 依赖收集 | 见 `build_web.sh` 里的 `--collect-all` 清单（faster_whisper / ctranslate2 / onnxruntime / huggingface_hub / uvicorn / fastapi / edge_tts / ollama）和上面的注释 |
+
+**CI 出包**（`.github/workflows/build.yml`）
+
+手动触发，或推 `v` 开头的 tag（那时顺便建 Release）。矩阵是
+macOS-AppleSilicon + Windows-x64 两个平台，各出一个 zip。几个要点：
+
+- **`API_KEY.py` 没进 git，但 `review.py` 顶层 import 它**，所以 CI 要现造一个。
+  默认写占位串 —— 发出去的包里没有真 key。占位串**不能是空字符串**，
+  OpenAI 客户端见到空 key 会在构造时直接抛异常，包就起不来了。
+- mac 的 zip 用 `ditto -c -k --keepParent`，不用 `zip` —— 后者丢符号链接和可执行位，
+  用户解压出来点不开。
+- `requirements-web.txt` 现在是**完整**的运行时依赖清单（CI 只装这一份），
+  加了新的第三方 import 记得同步进去。
+
+**打包相关还没解决的：**
+
+- **`API_KEY.py` 会被编进包里**（`review.py` 顶层 import 它）。终端版一直如此，
+  但分发出去等于把 groq / cerebras / cloudflare 的 key 一起给了拿到包的人。
+  真要公开发布，得改成让用户自己填 key 或走自己的中转，那时候要碰 `review.py`。
+- 没做代码签名和公证，别人下载后首次打开得右键→打开。
+- 首次录音要联网下模型；离线用户其它功能都能用，只有录音不行（界面已说明）。
+- **Intel Mac 做不了**，不是偷懒：`faster-whisper` 硬依赖 `onnxruntime>=1.14`，
+  而 onnxruntime 最后一个 macOS x86_64 轮子是 2021 年的 1.9.0。要支持 Intel Mac
+  只能放弃本地语音识别，或者自己编译 onnxruntime。
+- Windows 只在 CI 上构建过，没在真 Windows 机器上跑过。
 
 ## 怎么跑
 
 ```bash
 venv/bin/python edgetts.py    # 终端版
 venv/bin/python run_web.py    # 浏览器版，自动开 127.0.0.1:8765
+./build_web.sh                # 打包浏览器版，加 --app 写进 .app
 ```
 
 **8765 是我（用户）的端口。** 你验证用的预览服务走 8766（`.claude/launch.json` 里配好了），
 不要占用 8765，否则我跑 `run_web.py` 会撞上 "address already in use"。
+要验证打包产物就 `SPEAKNATURAL_PORT=8790 ./dist/SpeakNatural/SpeakNatural`，
+再带上 `BROWSER=true` 免得它往我屏幕上弹标签页。
 
 **改完代码我这边要做什么，不一样，容易搞混：**
 
