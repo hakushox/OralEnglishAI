@@ -627,10 +627,52 @@ function setupMic(btn) {
   btn.addEventListener('click', () => (on ? stop() : start()));
 }
 
-// 进页面就问一次模型状态：还在加载的话提前告诉用户，别等按了才发现要等十几秒
-fetch('/api/transcribe/status').then((r) => r.json()).then((d) => {
-  if (!d.ready) console.info('[stt] ' + d.msg);
-});
+/* 环境自检条：语音模型要不要下载（1.5G，不随包分发）、本机有没有 ollama。
+   这两件事都是"程序没坏但少了东西"，不明说的话用户只会看到录音点了没反应、
+   或者纠正莫名其妙变慢，然后以为程序坏了。
+   下载/加载期间每 3 秒轮询一次，好了就自己消失。 */
+function sysbar(html, warn) {
+  const bar = $('#sysbar');
+  bar.innerHTML = html || '';
+  bar.classList.toggle('on', !!html);
+  bar.classList.toggle('warn', !!warn);
+}
+
+async function checkEnv() {
+  let env;
+  try { env = await (await fetch('/api/env')).json(); } catch { return; }
+  const s = env.stt || {};
+
+  if (s.phase === 'downloading') {
+    sysbar(`<span class="sb-dot"></span><span>${esc(s.msg)}</span>` +
+           `<span class="sb-bar"><i style="width:${s.percent}%"></i></span>`);
+    setTimeout(checkEnv, 3000);
+    return;
+  }
+  if (!s.ready && s.phase === 'error') {
+    sysbar(`<span class="sb-dot"></span><span>${esc(s.msg)}</span>`, true);
+    return;
+  }
+  if (!s.ready) {
+    sysbar(`<span class="sb-dot"></span><span>${esc(s.msg)}</span>`);
+    setTimeout(checkEnv, 3000);
+    return;
+  }
+
+  // 语音就绪了，再看本地模型。没装 ollama 不是错误，只是行为不一样，给一次就能关掉
+  if (!env.local_model && !sessionStorage.getItem('hideOllamaHint')) {
+    sysbar('<span class="sb-dot" style="background:var(--text-5);animation:none"></span>' +
+           '<span>没检测到本地 ollama，改写会走云端模型（需要联网）</span>' +
+           '<button class="sb-x" aria-label="知道了">×</button>');
+    $('.sb-x', $('#sysbar')).addEventListener('click', () => {
+      sessionStorage.setItem('hideOllamaHint', '1');
+      sysbar('');
+    });
+    return;
+  }
+  sysbar('');
+}
+checkEnv();
 
 $$('.mic-btn').forEach(setupMic);
 

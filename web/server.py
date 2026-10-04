@@ -21,9 +21,10 @@ from fastapi.staticfiles import StaticFiles
 
 import review
 
-from web import engine, prompts, stt, store, tts
+from web import bundle, engine, prompts, stt, store, tts
 
-STATIC_DIR = Path(__file__).parent / 'static'
+# 不能写 Path(__file__).parent —— 打包后 __file__ 在 archive 里，目录并不存在
+STATIC_DIR = bundle.resource('web', 'static')
 
 app = FastAPI(title='SpeakNatural')
 
@@ -170,9 +171,16 @@ async def save_note(payload: dict = Body(...)):
     return {'ok': True, 'matched': matched, 'summarized': len(answers) > 1, 'note': note}
 
 
-@app.get('/api/transcribe/status')
-async def transcribe_status():
-    return stt.status()
+@app.get('/api/env')
+def env():
+    """运行环境自检，前端进页面就问一次、语音模型没就绪时接着轮询。
+
+    两件事用户必须知道，否则会把「缺东西」当成「程序坏了」：
+    语音模型是否还在下载（约 1.5G，不随包分发），本机有没有 ollama
+    （没有的话纠正会走云端，要联网）。写成 def 走线程池 ——
+    get_local_model() 第一次会 subprocess 跑 ollama list。
+    """
+    return {'stt': stt.status(), 'local_model': engine.get_local_model()}
 
 
 @app.post('/api/transcribe')

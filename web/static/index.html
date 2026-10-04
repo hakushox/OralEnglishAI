@@ -17,6 +17,9 @@
     <button data-view="archive" class="spacer" data-tip="你积累的全部记录。可以让模型分析你反复出现的语法习惯">档案 <span id="arc-count">—</span></button>
   </nav>
 
+  <!-- 环境提示条：语音模型在下载 / 没装 ollama。没话说时完全不占位置 -->
+  <div id="sysbar"></div>
+
   <!-- ==================== 练习 ====================
        递进式：data-stage 控制阶段，交互项靠"浮现"而不是常驻按钮。
        .field 是通用的「输入框 + 内嵌麦克风」组件，别的模块也用它。 -->

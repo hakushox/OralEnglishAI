@@ -792,3 +792,46 @@ textarea::placeholder, input::placeholder { color: var(--text-5); }
 .pop .acts button { font-size: 12px; padding: 5px 11px; }
 
 .en { cursor: text; }
+
+/* ============ 环境提示条 ============
+   语音模型 1.5G 要下载、本机没装 ollama —— 这类"程序没坏但少了东西"的状态
+   必须常驻可见，用 toast 会在用户没看屏幕时飘走。 */
+#sysbar { display: none; }
+#sysbar.on {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -6px 0 18px;
+  padding: 9px 12px;
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-3);
+  font-size: 13px;
+}
+#sysbar .sb-dot {
+  width: 7px; height: 7px; flex: none;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  animation: sb-breathe 1.6s var(--ease) infinite;
+}
+#sysbar.warn .sb-dot { background: var(--del); animation: none; }
+@keyframes sb-breathe { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+#sysbar .sb-bar {
+  flex: 1; min-width: 60px; height: 4px;
+  background: var(--surface-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+#sysbar .sb-bar i {
+  display: block; height: 100%;
+  background: var(--accent-dim);
+  transition: width .6s var(--ease);
+}
+#sysbar .sb-x {
+  margin-left: auto; flex: none;
+  background: none; border: 0; cursor: pointer;
+  color: var(--text-5); font-size: 15px; line-height: 1;
+  padding: 2px 4px;
+}
+#sysbar .sb-x:hover { color: var(--text-3); }
