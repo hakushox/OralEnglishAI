@@ -12,9 +12,19 @@ on:
   workflow_dispatch:
   push:
     tags: ['v*']
+    # 调试期开着：改完直接看 CI 结果，不用每次去页面手点。
+    # 等稳定了把这两行删掉，省得每次 push 都空跑十几分钟。
+    branches: [master]
 
 permissions:
   contents: write        # 打 tag 时要建 Release
+
+# Windows 的 Python 默认按系统代码页读写文件和输出，而这个项目从注释到提示全是中文，
+# 不开 UTF-8 模式，写 API_KEY.py 和 print 中文都会抛 UnicodeEncodeError（第 1 次 CI 就是这么挂的）。
+# mac 不受影响，但统一开着省得以后再踩。
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
 
 jobs:
   build:
@@ -59,7 +69,7 @@ jobs:
           for n in names:
               v = os.environ.get(n) or 'PLACEHOLDER-NO-CLOUD-KEY'
               lines.append(f'{n} = {v!r}\n')
-          open('API_KEY.py', 'w').write(''.join(lines))
+          open('API_KEY.py', 'w', encoding='utf-8').write(''.join(lines))
           print('已生成 API_KEY.py，占位:',
                 [n for n in names if not os.environ.get(n)])
 

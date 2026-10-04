@@ -22,6 +22,16 @@ import webbrowser
 
 import uvicorn
 
+# Windows 控制台默认是系统代码页（中文系统是 cp936），印不出 ⚠ 这类字符，
+# 直接抛 UnicodeEncodeError 把程序干掉 —— 而这个程序所有提示都是中文。
+# 打包后的 exe 不受 PYTHONUTF8 环境变量影响，只能进程自己改。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding='utf-8', errors='replace')
+    except (AttributeError, ValueError):
+        pass          # 没有控制台时 stdout 可能是 None 或不可重配，忽略即可
+
+
 HOST = '127.0.0.1'
 # 8765 是默认端口，被占用会自动顺延；SPEAKNATURAL_PORT 可以指定别的起点
 # （同时开两份、或者验证用的实例不想抢用户的端口时用得上）
@@ -52,7 +62,7 @@ def main():
     port = pick_port()
     url = f'http://{HOST}:{port}'
     if port != PORT:
-        print(f'⚠️  {PORT} 端口被占用了，改用 {port}')
+        print(f'[!] {PORT} 端口被占用了，改用 {port}')
     print(f'SpeakNatural 已启动 → {url}  (Ctrl+C 退出)')
     print('这个窗口是程序本体，关掉它程序就停了。')
 
