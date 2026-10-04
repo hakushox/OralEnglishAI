@@ -13,6 +13,7 @@ SpeakNatural 浏览器版打包脚本（macOS / Windows 通用）。
 """
 
 import os
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -66,6 +67,65 @@ def build():
     return out
 
 
+# ---------- macOS 的 .app 壳 ----------
+
+# 双击 .app 时执行的就是这个脚本。
+# 为什么不直接 exec 真正的程序：那样没有控制台，模型下载进度、端口提示、
+# 崩溃堆栈全都看不见，用户只会看到"点了没反应"。用 open -a Terminal 拉一个
+# 终端窗口起它 —— 跟仓库里那个手工 AppleScript 壳同一个思路，只是不用 osacompile。
+LAUNCHER = """#!/bin/sh
+DIR=$(cd "$(dirname "$0")/../Resources/SpeakNatural" && pwd) || exit 1
+exec open -a Terminal "$DIR/SpeakNatural"
+"""
+
+
+def make_bundle(built):
+    """在 dist/ 里生成一个可双击的 SpeakNatural.app（macOS）。
+
+    跟仓库里那个手工做的 SpeakNaturalLauncher.app 是两套东西：那个是
+    osacompile 出来的 AppleScript applet，被 .gitignore 挡着进不了 CI。
+    这个是现生成的，CI 和本机出的包因此完全一致。
+    """
+    app = ROOT / 'dist' / f'{NAME}.app'
+    shutil.rmtree(app, ignore_errors=True)
+    macos = app / 'Contents' / 'MacOS'
+    res = app / 'Contents' / 'Resources'
+    macos.mkdir(parents=True)
+    res.mkdir(parents=True)
+
+    launcher = macos / NAME
+    launcher.write_text(LAUNCHER)
+    launcher.chmod(0o755)
+
+    shutil.copytree(built, res / NAME)
+    shutil.copy2(ROOT / 'images' / 'icon.icns', res / 'icon.icns')
+    (res / NAME / NAME).chmod(0o755)
+
+    version = os.environ.get('SPEAKNATURAL_VERSION', '0.0.0').lstrip('v')
+    with open(app / 'Contents' / 'Info.plist', 'wb') as f:
+        plistlib.dump({
+            'CFBundleName': NAME,
+            'CFBundleDisplayName': NAME,
+            'CFBundleIdentifier': 'com.hakushox.speaknatural',
+            'CFBundleExecutable': NAME,
+            'CFBundleIconFile': 'icon.icns',
+            'CFBundlePackageType': 'APPL',
+            'CFBundleShortVersionString': version,
+            'CFBundleVersion': version,
+            'LSMinimumSystemVersion': '11.0',
+            'NSHighResolutionCapable': True,
+        }, f)
+
+    # 临时签名（ad-hoc）。不是为了过公证 —— 没有开发者账号也做不到 ——
+    # 而是完全没签名的包在新系统上更容易被判成"已损坏"，连"仍要打开"都给不出来。
+    r = subprocess.run(['codesign', '--force', '--deep', '--sign', '-', str(app)],
+                       capture_output=True, text=True)
+    print('已临时签名' if r.returncode == 0 else f'签名失败（不致命）: {r.stderr.strip()[:120]}')
+
+    print(f'✅ 应用：{app}')
+    return app
+
+
 def into_app(built):
     """把产物塞进 macOS 的 .app 壳里。壳本身是手工做的 AppleScript applet，
     它只认死路径 Contents/Resources/SpeakNatural/SpeakNatural，所以名字不能改。"""
@@ -81,7 +141,7 @@ def into_app(built):
 
 if __name__ == '__main__':
     built = build()
-    if '--app' in sys.argv:
-        if sys.platform != 'darwin':
-            sys.exit('--app 只在 macOS 上有意义')
-        into_app(built)
+    if sys.platform == 'darwin':
+        make_bundle(built)          # 用户要的是能双击的东西，不是一个文件夹
+        if '--app' in sys.argv:
+            into_app(built)         # 另外再写进仓库里那个手工 AppleScript 壳

@@ -79,12 +79,16 @@ jobs:
           pip install -r requirements-web.txt pyinstaller==6.21.0
 
       - name: 打包
+        env:
+          SPEAKNATURAL_VERSION: ${{ github.ref_name }}   # tag 时写进 .app 的版本号
         run: python build_web.py
 
       # zip 必须保住可执行位和符号链接，所以 macOS 用 ditto 而不是 zip
+      # 打的是 dist/SpeakNatural.app（build_web.py 在 macOS 上顺带生成的），
+      # 不是那个文件夹 —— 用户要的是能双击的东西
       - name: 压缩（macOS）
         if: runner.os == 'macOS'
-        run: ditto -c -k --keepParent dist/SpeakNatural SpeakNatural-${{ matrix.label }}.zip
+        run: ditto -c -k --keepParent dist/SpeakNatural.app SpeakNatural-${{ matrix.label }}.zip
 
       - name: 压缩（Windows）
         if: runner.os == 'Windows'

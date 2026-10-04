@@ -79,8 +79,16 @@
 拿 venv 的 python 去调它，CI 也是调它。写成 .py 是因为 Windows 跑不了 shell 脚本，
 而那串 `--collect-all` 抄成两份迟早对不上。
 
-入口换成了 `run_web.py`，`.app` 双击起来的已经是浏览器版（可执行文件仍叫
-`SpeakNatural`，所以 `for AppleScript` 那段脚本不用改）。打包后实测通过：
+入口换成了 `run_web.py`。macOS 上打包会顺带生成 **`dist/SpeakNatural.app`** ——
+用户要的是能双击的东西，不是一个文件夹，CI 打的 mac 包也是它。
+
+**两个 .app 壳，别搞混**：`dist/SpeakNatural.app` 是 `build_web.py:make_bundle()`
+现生成的（Info.plist + 一个 `open -a Terminal` 的启动脚本），CI 和本机出的包因此一致；
+仓库根目录那个 `SpeakNaturalLauncher.app` 是你手工 osacompile 的 AppleScript applet，
+被 `*.app` gitignore 挡着进不了 CI，现在只有 `--app` 参数会往里写，留着备用。
+
+启动脚本**不能直接 exec 真程序** —— 那样没有控制台，模型下载进度、端口提示、
+崩溃堆栈全看不见，用户只会看到「点了没反应」。打包后实测通过：
 首页 / 静态文件 / 档案与生词本读盘 / edge-tts 合成 / whisper 转写（av 解码 +
 onnxruntime VAD）/ 本地 ollama 纠正 / 云端 groq 追问。
 
