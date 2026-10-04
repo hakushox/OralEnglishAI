@@ -97,8 +97,19 @@ onnxruntime VAD）/ 本地 ollama 纠正 / 云端 groq 追问。
 
 **CI 出包**（`.github/workflows/build.yml`）
 
-手动触发，或推 `v` 开头的 tag（那时顺便建 Release）。矩阵是
-macOS-AppleSilicon + Windows-x64 两个平台，各出一个 zip。几个要点：
+手动触发、推到 master、或推 `v` 开头的 tag（最后一种顺便建 Release）。矩阵是
+macOS-AppleSilicon + Windows-x64 两个平台，各出一个 zip。**已经跑通**：
+mac 75M / 1分14秒，Windows 104M / 1分57秒。
+
+（push 到 master 也触发是调试期临时开的，稳定后把 workflow 里 `branches: [master]`
+那两行删掉，省得每次 push 都空跑。）
+
+几个要点：
+
+- **所有涉及 Windows 的地方都要当心编码**。Windows 的 Python 默认按系统代码页
+  读写文件和输出，这个项目从注释到提示全是中文 —— 第一次 CI 就是挂在
+  `print('已生成…')` 上。workflow 里全局开了 `PYTHONUTF8`，而**打包后的 exe
+  读不到环境变量**，所以 `run_web.py` 进程自己把 stdout/stderr 重配成 UTF-8。
 
 - **`API_KEY.py` 没进 git，但 `review.py` 顶层 import 它**，所以 CI 要现造一个。
   默认写占位串 —— 发出去的包里没有真 key。占位串**不能是空字符串**，
